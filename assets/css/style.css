@@ -24,7 +24,7 @@ header {
 header .logo {
     font-size: 28px;
     font-weight: 700;
-    color: #2c6e49;
+    color: #1D3A5F;
 }
 
 nav ul {
@@ -40,7 +40,7 @@ nav a {
 }
 
 nav a:hover {
-    color: #2c6e49;
+    color: #1D3A5F;
 }
 
 /* HERO */
@@ -92,22 +92,16 @@ nav a:hover {
 }
 
 .primary {
-    background: #2c6e49;
-    color: white;
-}
-
-.secondary {
-    background: white;
-    color: #2c6e49;
-    border: 2px solid #2c6e49;
+    color: #1D3A5F;
+    border: 2px solid #1D3A5F;
 }
 
 .primary:hover {
-    background: #1e4b32;
+    background: #15293F;
 }
 
 .secondary:hover {
-    background: #2c6e49;
+    background: #1D3A5F;
     color: white;
 }
 
@@ -119,7 +113,7 @@ section {
 
 section h2 {
     margin-bottom: 20px;
-    color: #1e4b32;
+    color: #1D3A5F;
 }
 
 /* GALERIE */
@@ -139,7 +133,7 @@ section h2 {
 
 /* FOOTER */
 footer {
-    background: #1e4b32;
+    background: #1D3A5F;
     color: white;
     text-align: center;
     padding: 20px;
@@ -192,11 +186,11 @@ footer {
     padding: 20px;
     background: #f1f8f4;
     border-radius: 10px;
-    border-left: 5px solid #2c6e49;
+    border-left: 5px solid #1D3A5F;
 }
 
 .valeur-item h3 {
-    color: #2c6e49;
+    color: #1D3A5F;
 }
 
 /* TEAM */
@@ -227,7 +221,7 @@ footer {
 }
 
 .team-card h3 {
-    color: #2c6e49;
+    color: #1D3A5F;
 }
 /* PROGRAMME DE L'ANNEE */
 .programme-annee {
@@ -246,7 +240,7 @@ footer {
     background: #fff;
     padding: 25px;
     border-radius: 12px;
-    border-left: 6px solid #2c6e49;
+    border-left: 6px solid #1D3A5F;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     transition: 0.3s;
 }
@@ -257,8 +251,31 @@ footer {
 }
 
 .programme-card h3 {
-    color: #2c6e49;
+    color: #1D3A5F;
     margin-bottom: 10px;
+}
+
+/* Variantes pour cartes programmes / retraites */
+.programme-card--highlight {
+    border: 2px solid #2c7a7b;
+    box-shadow: 0 0 10px rgba(0,0,0,0.15);
+    background: #f0faf9;
+}
+
+.programme-card--past {
+    opacity: 0.85;
+}
+
+.programme-card__image-top {
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.programme-card__image-top img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid #ddd;
 }
 /* INFORMATIONS GENERAL RETRAITE */
 .infos-retraite {
@@ -286,14 +303,14 @@ footer {
     padding: 20px;
     max-width: 700px;
     background: white;
-    border-left: 6px solid #2c6e49;
+    border-left: 6px solid #1D3A5F;
     border-radius: 10px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .jour h3 {
     margin-bottom: 15px;
-    color: #2c6e49;
+    color: #1D3A5F;
 }
 
 .jour ul {
@@ -337,7 +354,7 @@ label {
     font-weight: 600;
     margin-bottom: 8px;
     display: block;
-    color: #1e4b32;
+    color: #1D3A5F;
 }
 
 input, textarea {
@@ -351,14 +368,14 @@ input, textarea {
 
 input:focus, textarea:focus {
     outline: none;
-    border-color: #2c6e49;
+    border-color: #1D3A5F;
     background: #fff;
 }
 
 .success-message {
     margin-top: 15px;
     font-weight: bold;
-    color: #2c6e49;
+    color: #1D3A5F;
     display: none;
 }
 /* PAGE GALERIE */
@@ -437,7 +454,7 @@ input:focus, textarea:focus {
 
 .contact-info h2 {
     margin-bottom: 15px;
-    color: #2c6e49;
+    color: #1D3A5F;
 }
 
 .contact-info p {
@@ -448,6 +465,6 @@ input:focus, textarea:focus {
 .success-message {
     margin-top: 20px;
     display: none;
-    color: #2c6e49;
+    color: #1D3A5F;
     font-weight: bold;
 }
