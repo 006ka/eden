@@ -1,71 +1,197 @@
-<div class="admin-section" id="dashboard">
-    <h2>Tableau de bord</h2>
-    <p>Vue d'ensemble du site</p>
+<?php
+// Récupération des statistiques avancées
+$stats = [
+    'total_retreats' => $pdo->query('SELECT COUNT(*) FROM retreats')->fetchColumn(),
+    'total_gallery' => $pdo->query('SELECT COUNT(*) FROM gallery')->fetchColumn(),
+    'total_contacts' => $pdo->query('SELECT COUNT(*) FROM contacts')->fetchColumn(),
+    'total_inscriptions' => $pdo->query('SELECT COUNT(*) FROM inscriptions')->fetchColumn(),
+    'recent_contacts' => $pdo->query('SELECT COUNT(*) FROM contacts WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)')->fetchColumn(),
+    'recent_inscriptions' => $pdo->query('SELECT COUNT(*) FROM inscriptions WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)')->fetchColumn(),
+    'active_retreats' => $pdo->query('SELECT COUNT(*) FROM retreats WHERE date_debut >= CURDATE() OR date_fin >= CURDATE()')->fetchColumn(),
+];
 
-    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px;">
-        <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.05);min-width:160px;">
-            <strong>Retraites</strong>
-            <div style="font-size:24px; margin-top:6px;"><?php echo count($retreats); ?></div>
+// Activité récente étendue
+$recent_activity = $pdo->query('
+    (SELECT "contact" as type, nom, email, created_at, "Nouveau contact" as action FROM contacts ORDER BY created_at DESC LIMIT 4)
+    UNION ALL
+    (SELECT "inscription" as type, nom, email, created_at, "Nouvelle inscription" as action FROM inscriptions ORDER BY created_at DESC LIMIT 4)
+    UNION ALL
+    (SELECT "retraite" as type, titre as nom, "" as email, created_at, "Retraite créée" as action FROM retreats ORDER BY created_at DESC LIMIT 2)
+    UNION ALL
+    (SELECT "galerie" as type, titre as nom, "" as email, created_at, "Photo ajoutée" as action FROM gallery ORDER BY created_at DESC LIMIT 2)
+    ORDER BY created_at DESC LIMIT 8
+')->fetchAll(PDO::FETCH_ASSOC);
+
+// Statistiques mensuelles
+$monthly_stats = $pdo->query('
+    SELECT 
+        MONTH(created_at) as month,
+        COUNT(*) as count,
+        "contacts" as type 
+    FROM contacts 
+    WHERE YEAR(created_at) = YEAR(CURDATE())
+    GROUP BY MONTH(created_at)
+    ORDER BY month DESC
+    LIMIT 6
+')->fetchAll(PDO::FETCH_ASSOC);
+?>
+
+<div class="admin-section">
+    <div class="dashboard-header" style="display: flex; justify-content: between; align-items: center; margin-bottom: 30px;">
+        <div>
+            <h2 style="margin: 0 0 8px 0;">Tableau de Bord</h2>
+            <p style="margin: 0; color: var(--color-text-light);">Bienvenue dans votre espace d'administration EDEN</p>
         </div>
-        <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.05);min-width:160px;">
-            <strong>Programmes</strong>
-            <div style="font-size:24px; margin-top:6px;"><?php echo isset($programmes) ? count($programmes) : 0; ?></div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <span style="color: var(--color-text-light);"><?php echo date('d/m/Y'); ?></span>
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--admin-accent); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
+                A
+            </div>
         </div>
-        <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.05);min-width:160px;">
-            <strong>Photos</strong>
-            <div style="font-size:24px; margin-top:6px;"><?php echo count($gallery); ?></div>
+    </div>
+    
+    <!-- Métriques principales -->
+    <div class="dashboard-metrics">
+        <div class="metric-card">
+            <div class="metric-value"><?php echo $stats['total_retreats']; ?></div>
+            <div class="metric-label">Retraites Actives</div>
+            <div class="metric-icon">📅</div>
         </div>
-        <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.05);min-width:160px;">
-            <strong>Messages</strong>
-            <div style="font-size:24px; margin-top:6px;"><?php echo count($contacts); ?></div>
+        
+        <div class="metric-card success">
+            <div class="metric-value"><?php echo $stats['total_inscriptions']; ?></div>
+            <div class="metric-label">Inscriptions</div>
+            <div class="metric-icon">✍️</div>
         </div>
-        <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.05);min-width:160px;">
-            <strong>Inscriptions</strong>
-            <div style="font-size:24px; margin-top:6px;"><?php echo count($inscriptions); ?></div>
+        
+        <div class="metric-card warning">
+            <div class="metric-value"><?php echo $stats['recent_contacts']; ?></div>
+            <div class="metric-label">Nouveaux Contacts</div>
+            <div class="metric-icon">📞</div>
         </div>
-        <?php if (!empty($uploadsStats)): ?>
-            <div style="background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.05);min-width:190px;">
-                <strong>Fichiers uploads</strong>
-                <div style="font-size:18px; margin-top:4px;">
-                    Total : <strong><?php echo (int)$uploadsStats['total']; ?></strong>
-                </div>
-                <div style="font-size:12px; color:#555; margin-top:2px;">
-                    Référencés : <?php echo (int)$uploadsStats['referenced']; ?><br>
-                    Orphelins : <?php echo count($uploadsStats['orphans']); ?>
-                </div>
-                <div style="margin-top:6px;">
-                    <a href="?section=tools" style="font-size:12px; color:var(--color-primary); text-decoration:underline;">Détail &gt;</a>
+        
+        <div class="metric-card info">
+            <div class="metric-value"><?php echo $stats['total_gallery']; ?></div>
+            <div class="metric-label">Photos Galerie</div>
+            <div class="metric-icon">🖼️</div>
+        </div>
+    </div>
+    
+    <div class="dashboard-grid">
+        <!-- Colonne principale -->
+        <div>
+            <!-- Actions rapides -->
+            <div class="admin-section">
+                <h3>Actions Rapides</h3>
+                <div class="quick-actions">
+                    <a href="?section=retreats&add=new" class="action-btn">
+                        <i>➕</i>
+                        <span>Nouvelle Retraite</span>
+                    </a>
+                    
+                    <a href="?section=galerie&add=new" class="action-btn">
+                        <i>🖼️</i>
+                        <span>Ajouter Photo</span>
+                    </a>
+                    
+                    <a href="?section=inscriptions_gestion" class="action-btn">
+                        <i>👥</i>
+                        <span>Voir Inscriptions</span>
+                    </a>
                 </div>
             </div>
-        <?php endif; ?>
-    </div>
-
-    <div class="admin-section" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:16px;">
-        <div>
-            <h3>Dernières retraites</h3>
-            <?php if (empty($retreats)): ?>
-                <p>Aucune retraite enregistrée.</p>
-            <?php else: ?>
-                <ul>
-                    <?php $i=0; foreach ($retreats as $r): if ($i++>=5) break; ?>
-                        <li><?php echo htmlspecialchars($r['titre']); ?><?php if (!empty($r['date_debut'])): ?> - <?php echo htmlspecialchars($r['date_debut']); ?><?php endif; ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            <?php endif; ?>
+            
+            <!-- Statistiques détaillées -->
+            <div class="admin-section">
+                <h3>Statistiques Détaillées</h3>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Retraites à venir</h3>
+                        <div class="stat-number"><?php echo $stats['active_retreats']; ?></div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <h3>Nouvelles inscriptions (7j)</h3>
+                        <div class="stat-number"><?php echo $stats['recent_inscriptions']; ?></div>
+                    </div>
+                </div>
+            </div>
         </div>
-
+        
+        <!-- Sidebar droite -->
         <div>
-            <h3>Derniers programmes</h3>
-            <?php if (empty($programmes)): ?>
-                <p>Aucun programme enregistré.</p>
-            <?php else: ?>
-                <ul>
-                    <?php $j=0; foreach ($programmes as $p): if ($j++>=5) break; ?>
-                        <li><?php echo htmlspecialchars($p['titre']); ?><?php if (!empty($p['date_debut'])): ?> - <?php echo htmlspecialchars($p['date_debut']); ?><?php endif; ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            <?php endif; ?>
+            <!-- Activité récente -->
+            <div class="admin-section">
+                <div class="activity-header">
+                    <h3 style="margin: 0;">Activité Récente</h3>
+                    <a href="#" style="color: var(--admin-accent); text-decoration: none; font-size: 0.9rem;">Voir tout</a>
+                </div>
+                <div class="recent-activity">
+                    <div class="activity-list">
+                        <?php if (!empty($recent_activity)): ?>
+                            <?php foreach ($recent_activity as $activity): ?>
+                                <div class="activity-item">
+                                    <div class="activity-icon">
+                                        <?php 
+                                        $icon = match($activity['type']) {
+                                            'contact' => '📧',
+                                            'inscription' => '✍️',
+                                            'retraite' => '📅',
+                                            'galerie' => '🖼️',
+                                            default => '📌'
+                                        };
+                                        echo $icon;
+                                        ?>
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">
+                                            <?php echo htmlspecialchars($activity['nom']); ?>
+                                        </div>
+                                        <div class="activity-time">
+                                            <?php 
+                                            $date = new DateTime($activity['created_at']);
+                                            echo $activity['action'] . ' • ' . $date->format('d/m à H:i');
+                                            ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="empty-state" style="padding: 40px 20px;">
+                                <i>📊</i>
+                                <h3 style="font-size: 1.1rem;">Aucune activité récente</h3>
+                                <p style="font-size: 0.9rem;">Les nouvelles activités apparaîtront ici.</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+</div>
 
+<!-- Outils admin -->
+<div class="admin-section">
+    <h3>Outils d'Administration</h3>
+    <div class="quick-actions">
+        <a href="?section=tools" class="action-btn">
+            <i>🔧</i>
+            <span>Outils Système</span>
+        </a>
+        
+        <a href="../index.php" target="_blank" class="action-btn">
+            <i>👁️</i>
+            <span>Voir le Site</span>
+        </a>
+        
+        <a href="?section=account" class="action-btn">
+            <i>👤</i>
+            <span>Mon Compte</span>
+        </a>
+        
+        <a href="?logout=1" class="action-btn">
+            <i>🚪</i>
+            <span>Déconnexion</span>
+        </a>
+    </div>
 </div>

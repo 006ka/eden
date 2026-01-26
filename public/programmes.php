@@ -1,6 +1,26 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 
+// Si la table `programmes` n'existe plus, afficher un message simple
+try {
+    $pdo->query('SELECT 1 FROM programmes LIMIT 1');
+    $programmesTableExists = true;
+} catch (PDOException $e) {
+    $programmesTableExists = false;
+}
+if (!$programmesTableExists) {
+    include __DIR__ . '/../includes/header.php';
+    ?>
+    <main class="container" style="padding:40px; text-align:center;">
+        <h1>Programmes</h1>
+        <p style="color:#666;">La page « Programmes » est désactivée car la table <strong>programmes</strong> n'est pas utilisée.</p>
+        <p><a href="../index.php" class="btn">Retour à l'accueil</a></p>
+    </main>
+    <?php
+    include __DIR__ . '/../includes/footer.php';
+    exit;
+}
+
 // années disponibles
 $py = $pdo->query("SELECT DISTINCT YEAR(COALESCE(date_debut,date_fin)) AS y FROM programmes WHERE date_debut IS NOT NULL OR date_fin IS NOT NULL ORDER BY y DESC")->fetchAll(PDO::FETCH_ASSOC);
 $availableYears = [];
@@ -137,6 +157,13 @@ $highlightProgram = isset($upcoming[0]) ? $upcoming[0] : (isset($past[0]) ? $pas
                     <p style="font-size: 0.95em;">Changement de vie</p>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <!-- CTA: Inscription à la prochaine retraite -->
+    <section style="padding: 18px 0; background: transparent;">
+        <div class="container" style="text-align: center;">
+            <a href="inscription.php?type=retraite" class="btn btn-primary" style="padding:12px 22px; font-weight:700;">S'inscrire à la prochaine retraite</a>
         </div>
     </section>
 

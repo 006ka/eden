@@ -1,5 +1,15 @@
 <?php
 // Section de gestion des programmes annuels
+// Si la table `programmes` a été supprimée, afficher un message et quitter la section
+if (!function_exists('tableExistsPDO') || !tableExistsPDO($pdo, 'programmes')) {
+    ?>
+    <div class="admin-section" id="programmes">
+        <h2>Programmes annuels</h2>
+        <p style="color:#777;">La section « Programmes » est désactivée car la table <strong>programmes</strong> n'existe pas.</p>
+    </div>
+    <?php
+    return;
+}
 ?>
 <div class="admin-section" id="programmes">
     <h2 style="display:flex; justify-content:space-between; align-items:center;">

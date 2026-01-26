@@ -184,9 +184,28 @@ $highlightId = $highlightRetreat ? (int)$highlightRetreat['id'] : null;
                 </div>
                 <div>
                     <h3 style="font-weight: 700; margin-bottom: 15px;">Programme détaillé</h3>
-                    <?php if ($programmeImage !== ''): ?>
+                    <?php if ($programmeImage !== ''): 
+                        $imagePath = $programmeImage;
+                        // Si le chemin commence par 'uploads/', on ajoute un / au début
+                        if (strpos($imagePath, 'uploads/') === 0) {
+                            $imagePath = '/' . $imagePath;
+                        }
+                        // Si le chemin ne commence pas par /, on ajoute /uploads/ devant
+                        elseif (strpos($imagePath, '/') !== 0) {
+                            $imagePath = '/uploads/' . $imagePath;
+                        }
+                        // Vérification si le fichier existe
+                        $fullPath = $_SERVER['DOCUMENT_ROOT'] . $imagePath;
+                        if (!file_exists($fullPath)) {
+                            // Essayer avec un chemin relatif si le chemin absolu ne fonctionne pas
+                            $altPath = __DIR__ . '/..' . $imagePath;
+                            if (file_exists($altPath)) {
+                                $imagePath = '..' . $imagePath;
+                            }
+                        }
+                    ?>
                         <div style="background: var(--light-bg); padding: 20px; border-radius: var(--radius); text-align: center;">
-                            <img src="<?php echo htmlspecialchars($programmeImage); ?>" alt="Programme de la retraite" style="max-width: 100%; height: auto; border-radius: var(--radius);" loading="lazy" decoding="async">
+                            <img src="<?php echo htmlspecialchars($imagePath); ?>" alt="Programme de la retraite" style="max-width: 100%; height: auto; border-radius: var(--radius);" loading="lazy" decoding="async">
                         </div>
                     <?php else: ?>
                         <div style="background: var(--light-bg); padding: 30px; border-radius: var(--radius); text-align: center; color: var(--muted);">
@@ -204,20 +223,20 @@ $highlightId = $highlightRetreat ? (int)$highlightRetreat['id'] : null;
             <h2 style="font-size: 1.6em; font-weight: 700; margin-bottom: 20px; color: var(--dark-text);">Conseils pour votre retraite</h2>
             <div class="block-grid">
                 <div class="block" style="background-color: var(--color-primary);">
-                    <h3>📚 À apporter</h3>
-                    <p style="font-size: 0.95em;">Bible, carnet et stylo</p>
+                    <h3 style="color: white;">📚 À apporter</h3>
+                    <p style="font-size: 0.95em; color: white;">Bible, carnet et stylo</p>
                 </div>
                 <div class="block" style="background-color: #3d7f5a;">
-                    <h3>🛏️ Logement</h3>
-                    <p style="font-size: 0.95em;">Couverture / draps personnels</p>
+                    <h3 style="color: white;">🛏️ Logement</h3>
+                    <p style="font-size: 0.95em; color: white;">Couverture / draps personnels</p>
                 </div>
                 <div class="block" style="background-color: #4d8f6a;">
-                    <h3>💧 Hydratation</h3>
-                    <p style="font-size: 0.95em;">Bouteille d'eau réutilisable</p>
+                    <h3 style="color: white;">💧 Hydratation</h3>
+                    <p style="font-size: 0.95em; color: white;">Bouteille d'eau réutilisable</p>
                 </div>
                 <div class="block" style="background-color: #5d9f7a;">
-                    <h3>⏰ Respect</h3>
-                    <p style="font-size: 0.95em;">Horaires et recueillement</p>
+                    <h3 style="color: white;">⏰ Respect</h3>
+                    <p style="font-size: 0.95em; color: white;">Horaires et recueillement</p>
                 </div>
             </div>
         </div>
@@ -254,9 +273,28 @@ $highlightId = $highlightRetreat ? (int)$highlightRetreat['id'] : null;
                     <?php foreach ($upcoming as $r): ?>
                         <?php $isHighlight = ($highlightId !== null && (int)$r['id'] === $highlightId); ?>
                         <a href="retraite.php?id=<?php echo (int)$r['id']; ?>" style="text-decoration: none; color: inherit; display: flex; flex-direction: column; padding: 20px; background: white; border-radius: var(--radius); box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; border: 2px solid <?php echo $isHighlight ? 'var(--color-primary)' : 'transparent'; ?>;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 6px 16px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='none'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)';">
-                            <?php if (!empty($r['programme_image_url'])): ?>
+                            <?php if (!empty($r['programme_image_url'])): 
+                                $imagePath = $r['programme_image_url'];
+                                // Si le chemin commence par 'uploads/', on ajoute un / au début
+                                if (strpos($imagePath, 'uploads/') === 0) {
+                                    $imagePath = '/' . $imagePath;
+                                }
+                                // Si le chemin ne commence pas par /, on ajoute /uploads/ devant
+                                elseif (strpos($imagePath, '/') !== 0) {
+                                    $imagePath = '/uploads/' . $imagePath;
+                                }
+                                // Vérification si le fichier existe
+                                $fullPath = $_SERVER['DOCUMENT_ROOT'] . $imagePath;
+                                if (!file_exists($fullPath)) {
+                                    // Essayer avec un chemin relatif si le chemin absolu ne fonctionne pas
+                                    $altPath = __DIR__ . '/..' . $imagePath;
+                                    if (file_exists($altPath)) {
+                                        $imagePath = '..' . $imagePath;
+                                    }
+                                }
+                            ?>
                                 <div style="width: 100%; height: 180px; background: var(--light-bg); border-radius: 6px; overflow: hidden; margin-bottom: 12px;">
-                                    <img src="<?php echo htmlspecialchars($r['programme_image_url']); ?>" alt="Programme" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy" decoding="async">
+                                    <img src="<?php echo htmlspecialchars($imagePath); ?>" alt="Programme" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy" decoding="async">
                                 </div>
                             <?php endif; ?>
                             <h3 style="font-weight: 700; font-size: 1.1em; margin-bottom: 8px;"><?php echo htmlspecialchars($r['titre']); ?></h3>
@@ -283,9 +321,28 @@ $highlightId = $highlightRetreat ? (int)$highlightRetreat['id'] : null;
                 <div class="block-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; opacity: 0.8;">
                     <?php foreach ($past as $r): ?>
                         <a href="retraite.php?id=<?php echo (int)$r['id']; ?>" style="text-decoration: none; color: inherit; display: flex; flex-direction: column; padding: 20px; background: white; border-radius: var(--radius); box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 6px 16px rgba(0,0,0,0.12)';" onmouseout="this.style.transform='none'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)';">
-                            <?php if (!empty($r['programme_image_url'])): ?>
+                            <?php if (!empty($r['programme_image_url'])): 
+                                $imagePath = $r['programme_image_url'];
+                                // Si le chemin commence par 'uploads/', on ajoute un / au début
+                                if (strpos($imagePath, 'uploads/') === 0) {
+                                    $imagePath = '/' . $imagePath;
+                                }
+                                // Si le chemin ne commence pas par /, on ajoute /uploads/ devant
+                                elseif (strpos($imagePath, '/') !== 0) {
+                                    $imagePath = '/uploads/' . $imagePath;
+                                }
+                                // Vérification si le fichier existe
+                                $fullPath = $_SERVER['DOCUMENT_ROOT'] . $imagePath;
+                                if (!file_exists($fullPath)) {
+                                    // Essayer avec un chemin relatif si le chemin absolu ne fonctionne pas
+                                    $altPath = __DIR__ . '/..' . $imagePath;
+                                    if (file_exists($altPath)) {
+                                        $imagePath = '..' . $imagePath;
+                                    }
+                                }
+                            ?>
                                 <div style="width: 100%; height: 180px; background: var(--light-bg); border-radius: 6px; overflow: hidden; margin-bottom: 12px;">
-                                    <img src="<?php echo htmlspecialchars($r['programme_image_url']); ?>" alt="Programme" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy" decoding="async">
+                                    <img src="<?php echo htmlspecialchars($imagePath); ?>" alt="Programme" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy" decoding="async">
                                 </div>
                             <?php endif; ?>
                             <h3 style="font-weight: 700; font-size: 1.1em; margin-bottom: 8px;"><?php echo htmlspecialchars($r['titre']); ?></h3>

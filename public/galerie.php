@@ -1,6 +1,37 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 $photos = $pdo->query('SELECT * FROM gallery ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
+
+function normalizeImagePath($path) {
+    if (empty($path)) return '';
+    
+    // Supprimer les doublons de "uploads/"
+    $path = preg_replace('/(^|\/)uploads\/+/', '/uploads/', $path);
+    
+    // Supprimer les parties de chemin inutiles
+    $path = str_replace(['../', './'], '', $path);
+    
+    // Si le chemin ne commence pas par /, on l'ajoute
+    if (strpos($path, '/') !== 0) {
+        $path = '/' . $path;
+    }
+    
+    // Vérifier si le fichier existe
+    $fullPath = $_SERVER['DOCUMENT_ROOT'] . $path;
+    if (!file_exists($fullPath)) {
+        // Essayer avec un chemin relatif si le chemin absolu ne fonctionne pas
+        $altPath = dirname(__DIR__) . $path;
+        if (file_exists($altPath)) {
+            // Si on trouve le fichier avec un chemin relatif, on utilise ce chemin
+            $path = '..' . $path;
+        } else {
+            // Si le fichier n'existe toujours pas, on utilise une image par défaut
+            $path = '/assets/images/default-image.jpg';
+        }
+    }
+    
+    return $path;
+}
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -23,20 +54,20 @@ $photos = $pdo->query('SELECT * FROM gallery ORDER BY created_at DESC')->fetchAl
             <h2 style="font-size: 1.6em; font-weight: 700; margin-bottom: 20px; color: var(--dark-text);">Galerie & Témoignages</h2>
             <div class="block-grid">
                 <div class="block" style="background-color: var(--color-primary);">
-                    <h3>📸 Moments</h3>
-                    <p style="font-size: 0.95em;">Instants bénis capturés</p>
+                    <h3 style="color: white;">📸 Moments</h3>
+                    <p style="font-size: 0.95em; color: white;">Instants bénis capturés</p>
                 </div>
                 <div class="block" style="background-color: var(--color-primary-dark);">
-                    <h3>🤝 Communauté</h3>
-                    <p style="font-size: 0.95em;">Partage et fraternité</p>
+                    <h3 style="color: white;">🤝 Communauté</h3>
+                    <p style="font-size: 0.95em; color: white;">Partage et fraternité</p>
                 </div>
                 <div class="block" style="background-color: var(--color-primary-light);">
-                    <h3>🙏 Adoration</h3>
-                    <p style="font-size: 0.95em;">Présence de Dieu</p>
+                    <h3 style="color: white;">🙏 Adoration</h3>
+                    <p style="font-size: 0.95em; color: white;">Présence de Dieu</p>
                 </div>
                 <div class="block" style="background-color: var(--color-secondary);">
-                    <h3>📝 Souvenirs</h3>
-                    <p style="font-size: 0.95em;">À conserver</p>
+                    <h3 style="color: white;">📝 Souvenirs</h3>
+                    <p style="font-size: 0.95em; color: white;">À conserver</p>
                 </div>
             </div>
         </div>
@@ -52,25 +83,15 @@ $photos = $pdo->query('SELECT * FROM gallery ORDER BY created_at DESC')->fetchAl
                     <p style="grid-column: 1 / -1; color: var(--muted); font-size: 1.1em;">Aucune photo enregistrée pour le moment.</p>
                 <?php else: ?>
                     <?php foreach ($photos as $p):
-                        $orig = $p['image_url'];
-                        $basename = basename($orig);
-                        $thumbRel = '../uploads/thumb_' . $basename;
-                        $uploadsDir = realpath(__DIR__ . '/../uploads');
-                        if ($uploadsDir) {
-                            $thumbFs = $uploadsDir . DIRECTORY_SEPARATOR . 'thumb_' . $basename;
-                        } else {
-                            $thumbFs = __DIR__ . '/../uploads/thumb_' . $basename;
-                        }
-                        $display = (file_exists($thumbFs)) ? $thumbRel : $orig;
-                        $full = $orig;
+                        $imagePath = normalizeImagePath($p['image_url']);
                         $link = !empty($p['retreat_id']) ? 'retraite.php?id=' . (int)$p['retreat_id'] : '';
                     ?>
-                        <div class="home-gallery-card" data-full="<?php echo htmlspecialchars($full); ?>" data-title="<?php echo htmlspecialchars($p['titre'] ?? ''); ?>" data-link="<?php echo htmlspecialchars($link); ?>"
+                        <div class="home-gallery-card" data-full="<?php echo htmlspecialchars($imagePath); ?>" data-title="<?php echo htmlspecialchars($p['titre'] ?? ''); ?>" data-link="<?php echo htmlspecialchars($link); ?>"
                              style="position: relative; background: white; border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;" 
                              onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 6px 16px rgba(0,0,0,0.12)';" 
                              onmouseout="this.style.transform='none'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)';">
                             <div style="width: 100%; padding-bottom: 66.66%; position: relative; background: var(--light-bg); overflow: hidden;">
-                                <img src="<?php echo htmlspecialchars($display); ?>" 
+                                <img src="<?php echo htmlspecialchars($imagePath); ?>" 
                                      alt="<?php echo htmlspecialchars($p['titre'] ?? 'Photo'); ?>" 
                                      loading="lazy" 
                                      decoding="async"

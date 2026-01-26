@@ -1,834 +1,615 @@
 <?php
-$session_started = session_status() === PHP_SESSION_ACTIVE;
-if (!$session_started) session_start();
+// Output buffering pour permettre les redirects même si du contenu a été envoyé
+ob_start();
 
-// Legacy fallback password used only to seed the first admin account during migration
-$LEGACY_ADMIN_PASSWORD = 'edenadmin'; // change this locally if needed
-$galleryError = '';
-$retreatError = '';
-
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header('Location: admin.php');
-    exit;
-}
-
+session_start();
 require_once __DIR__ . '/../config/db.php';
 
-// Ensure admins table exists and seed default admin when empty
-try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS admins (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(100) NOT NULL UNIQUE,
-        password_hash VARCHAR(255) NOT NULL,
-        email VARCHAR(255) DEFAULT NULL,
-        display_name VARCHAR(255) DEFAULT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+// Vérification de l'authentification
+if (!isset($_SESSION['admin_username'])) {
+    header('Location: index.php');
+    exit();
+}
 
-    $countStmt = $pdo->query('SELECT COUNT(*) as c FROM admins');
-    $countRow = $countStmt->fetch(PDO::FETCH_ASSOC);
-    if ($countRow && (int)$countRow['c'] === 0) {
-        // seed a default admin using the legacy password
-        $hash = password_hash($LEGACY_ADMIN_PASSWORD, PASSWORD_DEFAULT);
-        $pdo->prepare('INSERT INTO admins (username, password_hash, display_name, email) VALUES (?, ?, ?, ?)')
-            ->execute(['admin', $hash, 'Administrateur', null]);
+// Récupérer les informations de l'utilisateur connecté
+$current_username = $_SESSION['admin_username'];
+try {
+    $stmt = $pdo->prepare("SELECT * FROM admin_users WHERE username = ?");
+    $stmt->execute([$current_username]);
+    $admin_info = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$admin_info) {
+        session_destroy();
+        header('Location: index.php');
+        exit();
+    }
+
+    // Vérifier et mettre à jour les champs manquants si nécessaire
+    try {
+        // Vérifier si la colonne last_login existe
+        $checkColumn = $pdo->query("SHOW COLUMNS FROM admin_users LIKE 'last_login'");
+        if ($checkColumn->rowCount() > 0) {
+            $updateStmt = $pdo->prepare("UPDATE admin_users SET last_login = NOW() WHERE username = ?");
+            $updateStmt->execute([$current_username]);
+        }
+    } catch (PDOException $e) {
+        // Journaliser l'erreur mais ne pas arrêter l'exécution
+        error_log('Erreur lors de la mise à jour de la dernière connexion : ' . $e->getMessage());
     }
 } catch (PDOException $e) {
-    // If DB not available for some reason, continue with legacy fallback later
+    die("Erreur de connexion à la base de données : " . $e->getMessage());
 }
 
-// Handle login (username + password)
-if (isset($_POST['login'])) {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-
-    $authOk = false;
-    if ($username !== '') {
-        $stmt = $pdo->prepare('SELECT id, username, password_hash FROM admins WHERE username = ? LIMIT 1');
-        $stmt->execute([$username]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row && password_verify($password, $row['password_hash'])) {
-            $_SESSION['is_admin'] = true;
-            $_SESSION['admin_id'] = (int)$row['id'];
-            $authOk = true;
-        }
-    }
-
-    // Fallback: if no DB/auth matched, allow legacy password (for older installs)
-    if (!$authOk && isset($LEGACY_ADMIN_PASSWORD) && $password === $LEGACY_ADMIN_PASSWORD) {
-        $_SESSION['is_admin'] = true;
-        // try to set admin_id to first admin if available
-        try {
-            $r = $pdo->query('SELECT id FROM admins ORDER BY id ASC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
-            if ($r) $_SESSION['admin_id'] = (int)$r['id'];
-        } catch (Exception $e) {}
-        $authOk = true;
-    }
-
-    if (!$authOk) {
-        $login_error = 'Nom d\'utilisateur ou mot de passe incorrect.';
-    }
-}
-
-if (empty($_SESSION['is_admin'])) {
-    ?>
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-        <meta charset="UTF-8">
-        <title>Admin EDEN - Connexion</title>
-        <link rel="stylesheet" href="../assets/css/main.css">
-        <link rel="stylesheet" href="../assets/css/admin.css">
-        <style>
-            .admin-login { max-width: 400px; margin: 80px auto; background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-            .admin-login h1 { margin-bottom: 20px; text-align: center; }
-            .admin-login input[type=password] { width: 100%; padding: 10px; margin-bottom: 15px; }
-            .admin-login button { width: 100%; padding: 10px; }
-            .error { color: red; margin-bottom: 10px; text-align: center; }
-        </style>
-    </head>
-    <body>
-        <div class="admin-login">
-            <h1>Espace Admin</h1>
-            <?php if (!empty($login_error)): ?>
-                <p class="error"><?php echo htmlspecialchars($login_error); ?></p>
-            <?php endif; ?>
-            <form method="post">
-                <label>Mot de passe admin</label>
-                <input type="password" name="password" required>
-                <button type="submit" name="login" class="btn primary">Se connecter</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    <?php
-    exit;
-}
-
-require_once __DIR__ . '/../config/db.php';
-
-// Helper: redimensionne une image en utilisant GD, préserve ratio
-if (!function_exists('resize_image')) {
-    function resize_image($src, $dest, $maxWidth, $maxHeight, $quality = 85) {
-        if (!file_exists($src)) return false;
-        $info = getimagesize($src);
-        if ($info === false) return false;
-        list($width, $height, $type) = $info;
-
-        $ratio = $width / $height;
-        if ($width <= $maxWidth && $height <= $maxHeight) {
-            // pas besoin de redimensionner, copier si dest différent
-            if ($src !== $dest) {
-                return copy($src, $dest);
-            }
-            return true;
-        }
-
-        if ($maxWidth / $maxHeight > $ratio) {
-            $newHeight = $maxHeight;
-            $newWidth = intval($maxHeight * $ratio);
-        } else {
-            $newWidth = $maxWidth;
-            $newHeight = intval($maxWidth / $ratio);
-        }
-
-        switch ($type) {
-            case IMAGETYPE_JPEG:
-                $srcImg = imagecreatefromjpeg($src);
-                break;
-            case IMAGETYPE_PNG:
-                $srcImg = imagecreatefrompng($src);
-                break;
-            case IMAGETYPE_GIF:
-                $srcImg = imagecreatefromgif($src);
-                break;
-            case IMAGETYPE_WEBP:
-                if (function_exists('imagecreatefromwebp')) {
-                    $srcImg = imagecreatefromwebp($src);
-                } else {
-                    return false;
-                }
-                break;
-            default:
-                return false;
-        }
-
-        $dstImg = imagecreatetruecolor($newWidth, $newHeight);
-        // preserve transparency for PNG/GIF
-        if ($type === IMAGETYPE_PNG || $type === IMAGETYPE_GIF) {
-            imagecolortransparent($dstImg, imagecolorallocatealpha($dstImg, 0, 0, 0, 127));
-            imagealphablending($dstImg, false);
-            imagesavealpha($dstImg, true);
-        }
-
-        imagecopyresampled($dstImg, $srcImg, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
-
-        $ok = false;
-        switch ($type) {
-            case IMAGETYPE_JPEG:
-                $ok = imagejpeg($dstImg, $dest, $quality);
-                break;
-            case IMAGETYPE_PNG:
-                // quality for png: 0 (no compression) - 9
-                $pngLevel = 9 - floor($quality / 11); // map 0-100 to 9-0
-                $ok = imagepng($dstImg, $dest, $pngLevel);
-                break;
-            case IMAGETYPE_GIF:
-                $ok = imagegif($dstImg, $dest);
-                break;
-            case IMAGETYPE_WEBP:
-                if (function_exists('imagewebp')) {
-                    $ok = imagewebp($dstImg, $dest, $quality);
-                }
-                break;
-        }
-
-        imagedestroy($srcImg);
-        imagedestroy($dstImg);
-        return $ok;
-    }
-}
-
-
-// Gestion simple des retraites (ajout)
-if (isset($_POST['add_retreat'])) {
-    $titre = trim($_POST['ret_titre'] ?? '');
-    $theme = trim($_POST['ret_theme'] ?? '');
-    $date_debut = trim($_POST['ret_date_debut'] ?? '');
-    $date_fin = trim($_POST['ret_date_fin'] ?? '');
-    $lieu = trim($_POST['ret_lieu'] ?? '');
-    $orateurs = trim($_POST['ret_orateurs'] ?? '');
-    $description = trim($_POST['ret_description'] ?? '');
-    $prix = trim($_POST['ret_prix'] ?? '');
-    $programme_image_url = '';
-    $fiche_url = '';
-
-    // Traitement éventuel d'une image de programme uploadée
-    if (!empty($_FILES['ret_programme_image_file']['name']) && $_FILES['ret_programme_image_file']['error'] === UPLOAD_ERR_OK) {
-        $maxSize = 2 * 1024 * 1024; // 2 Mo
-        if ($_FILES['ret_programme_image_file']['size'] > $maxSize) {
-            $retreatError = 'Fichier trop volumineux (max 2 Mo).';
-        } else {
-            $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $originalName = basename($_FILES['ret_programme_image_file']['name']);
-            $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-
-            if (!in_array($ext, $allowed, true)) {
-                $retreatError = 'Type de fichier non autorisé. Formats acceptés : jpg, jpeg, png, gif, webp.';
-            } else {
-                $imageInfo = @getimagesize($_FILES['ret_programme_image_file']['tmp_name']);
-                if ($imageInfo === false) {
-                    $retreatError = 'Le fichier sélectionné ne semble pas être une image valide.';
-                } else {
-                    $newName = 'programme_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-
-                    if (move_uploaded_file($_FILES['ret_programme_image_file']['tmp_name'], $targetPath)) {
-                        // Redimensionne l'image du programme (max 1200x1200)
-                        resize_image($targetPath, $targetPath, 1200, 1200, 85);
-                        // Chemin utilisé côté web depuis /public/retraite.php
-                        $programme_image_url = '../uploads/' . $newName;
-                    } else {
-                        $retreatError = "Erreur lors de l'upload du fichier.";
-                    }
-                }
-            }
-        }
-    }
-
-    if ($titre === '') {
-        $retreatError = 'Le titre de la retraite est obligatoire.';
-    }
-
-    // Upload éventuel d'une fiche pratique (PDF ou image)
-    if ($retreatError === '' && !empty($_FILES['ret_fiche_file']['name']) && $_FILES['ret_fiche_file']['error'] === UPLOAD_ERR_OK) {
-        $maxSize = 4 * 1024 * 1024; // 4 Mo
-        if ($_FILES['ret_fiche_file']['size'] > $maxSize) {
-            $retreatError = 'Fiche pratique trop volumineuse (max 4 Mo).';
-        } else {
-            $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $originalName = basename($_FILES['ret_fiche_file']['name']);
-            $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $allowedDocs = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'];
-
-            if (!in_array($ext, $allowedDocs, true)) {
-                $retreatError = 'Type de fichier pour la fiche non autorisé. Formats acceptés : pdf, jpg, jpeg, png, gif, webp.';
-            } else {
-                $newName = 'fiche_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-
-                if (move_uploaded_file($_FILES['ret_fiche_file']['tmp_name'], $targetPath)) {
-                    $fiche_url = '../uploads/' . $newName;
-                } else {
-                    $retreatError = "Erreur lors de l'upload de la fiche pratique.";
-                }
-            }
-        }
-    }
-
-    if ($retreatError === '') {
-        $stmt = $pdo->prepare('INSERT INTO retreats (titre, theme, date_debut, date_fin, lieu, orateurs, prix, description, programme_image_url, fiche_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-        $stmt->execute([
-            $titre,
-            $theme !== '' ? $theme : null,
-            $date_debut !== '' ? $date_debut : null,
-            $date_fin !== '' ? $date_fin : null,
-            $lieu !== '' ? $lieu : null,
-            $orateurs !== '' ? $orateurs : null,
-            $prix !== '' ? $prix : null,
-            $description !== '' ? $description : null,
-            $programme_image_url !== '' ? $programme_image_url : null,
-            $fiche_url !== '' ? $fiche_url : null,
-        ]);
-        header('Location: admin.php?section=retreats&retreat_success=1');
-        exit;
-    }
-}
-
-// Mise à jour complète d'une retraite existante
-if (isset($_POST['update_retreat'])) {
-    $id = isset($_POST['retreat_id']) ? (int) $_POST['retreat_id'] : 0;
-    $titre = trim($_POST['ret_titre'] ?? '');
-    $theme = trim($_POST['ret_theme'] ?? '');
-    $date_debut = trim($_POST['ret_date_debut'] ?? '');
-    $date_fin = trim($_POST['ret_date_fin'] ?? '');
-    $lieu = trim($_POST['ret_lieu'] ?? '');
-    $orateurs = trim($_POST['ret_orateurs'] ?? '');
-    $description = trim($_POST['ret_description'] ?? '');
-    $prix = trim($_POST['ret_prix'] ?? '');
-
-    if ($id <= 0) {
-        $retreatError = 'Retraite introuvable.';
-    }
-
-    // Récupère l'image actuelle et la fiche actuelle
-    $programme_image_url = null;
-    $fiche_url = null;
-    if ($id > 0) {
-        $stmt = $pdo->prepare('SELECT programme_image_url, fiche_url FROM retreats WHERE id = ?');
-        $stmt->execute([$id]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row) {
-            $programme_image_url = $row['programme_image_url'];
-            $fiche_url = $row['fiche_url'];
-        }
-    }
-
-    // Traitement éventuel d'une nouvelle image de programme
-    if (!empty($_FILES['ret_programme_image_file']['name']) && $_FILES['ret_programme_image_file']['error'] === UPLOAD_ERR_OK) {
-        $maxSize = 2 * 1024 * 1024; // 2 Mo
-        if ($_FILES['ret_programme_image_file']['size'] > $maxSize) {
-            $retreatError = 'Fichier trop volumineux (max 2 Mo).';
-        } else {
-            $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $originalName = basename($_FILES['ret_programme_image_file']['name']);
-            $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-
-            if (!in_array($ext, $allowed, true)) {
-                $retreatError = 'Type de fichier non autorisé. Formats acceptés : jpg, jpeg, png, gif, webp.';
-            } else {
-                $imageInfo = @getimagesize($_FILES['ret_programme_image_file']['tmp_name']);
-                if ($imageInfo === false) {
-                    $retreatError = 'Le fichier sélectionné ne semble pas être une image valide.';
-                } else {
-                    $newName = 'programme_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-
-                    if (move_uploaded_file($_FILES['ret_programme_image_file']['tmp_name'], $targetPath)) {
-                        // Redimensionne l'image du programme (max 1200x1200)
-                        resize_image($targetPath, $targetPath, 1200, 1200, 85);
-                        // Chemin utilisé côté web depuis /public/retraite.php
-                        $programme_image_url = '../uploads/' . $newName;
-                    } else {
-                        $retreatError = "Erreur lors de l'upload du fichier.";
-                    }
-                }
-            }
-        }
-    }
-
-    // Traitement éventuel d'une nouvelle fiche pratique
-    if ($retreatError === '' && !empty($_FILES['ret_fiche_file']['name']) && $_FILES['ret_fiche_file']['error'] === UPLOAD_ERR_OK) {
-        $maxSize = 4 * 1024 * 1024; // 4 Mo
-        if ($_FILES['ret_fiche_file']['size'] > $maxSize) {
-            $retreatError = 'Fiche pratique trop volumineuse (max 4 Mo).';
-        } else {
-            $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $originalName = basename($_FILES['ret_fiche_file']['name']);
-            $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $allowedDocs = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'];
-
-            if (!in_array($ext, $allowedDocs, true)) {
-                $retreatError = 'Type de fichier pour la fiche non autorisé. Formats acceptés : pdf, jpg, jpeg, png, gif, webp.';
-            } else {
-                $newName = 'fiche_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-
-                if (move_uploaded_file($_FILES['ret_fiche_file']['tmp_name'], $targetPath)) {
-                    $fiche_url = '../uploads/' . $newName;
-                } else {
-                    $retreatError = "Erreur lors de l'upload de la fiche pratique.";
-                }
-            }
-        }
-    }
-
-    if ($titre === '') {
-        $retreatError = 'Le titre de la retraite est obligatoire.';
-    }
-
-    if ($retreatError === '') {
-        $stmt = $pdo->prepare('UPDATE retreats SET titre = ?, theme = ?, date_debut = ?, date_fin = ?, lieu = ?, orateurs = ?, prix = ?, description = ?, programme_image_url = ?, fiche_url = ? WHERE id = ?');
-        $stmt->execute([
-            $titre,
-            $theme !== '' ? $theme : null,
-            $date_debut !== '' ? $date_debut : null,
-            $date_fin !== '' ? $date_fin : null,
-            $lieu !== '' ? $lieu : null,
-            $orateurs !== '' ? $orateurs : null,
-            $prix !== '' ? $prix : null,
-            $description !== '' ? $description : null,
-            $programme_image_url !== '' ? $programme_image_url : null,
-            $fiche_url !== '' ? $fiche_url : null,
-            $id,
-        ]);
-        header('Location: admin.php?section=retreats&retreat_success=1');
-        exit;
-    }
-}
-
-if (isset($_GET['delete_retreat'])) {
-    $id = (int) $_GET['delete_retreat'];
-    $pdo->prepare('DELETE FROM retreats WHERE id = ?')->execute([$id]);
-    header('Location: admin.php?section=retreats&retreat_deleted=1');
-    exit;
-}
-
-// Gestion suppressions contacts / inscriptions
-if (isset($_GET['delete_contact'])) {
-    $id = (int) $_GET['delete_contact'];
-    $pdo->prepare('DELETE FROM contacts WHERE id = ?')->execute([$id]);
-    header('Location: admin.php#contacts');
-    exit;
-}
-
-if (isset($_GET['delete_inscription'])) {
-    $id = (int) $_GET['delete_inscription'];
-    $pdo->prepare('DELETE FROM inscriptions WHERE id = ?')->execute([$id]);
-    header('Location: admin.php#inscriptions');
-    exit;
-}
-
-// Gestion galerie : ajout (URL ou upload) et suppression
-if (isset($_POST['add_gallery'])) {
-    $image_url = trim($_POST['image_url'] ?? '');
-    $titre = trim($_POST['titre'] ?? '');
-    $retreat_id = isset($_POST['retreat_id']) && $_POST['retreat_id'] !== '' ? (int) $_POST['retreat_id'] : null;
-
-    // Si un fichier est uploadé, on le traite en priorité
-    if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-        $maxSize = 2 * 1024 * 1024; // 2 Mo
-        if ($_FILES['image_file']['size'] > $maxSize) {
-            $galleryError = 'Fichier trop volumineux (max 2 Mo).';
-        } else {
-            $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $originalName = basename($_FILES['image_file']['name']);
-            $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-
-            if (!in_array($ext, $allowed, true)) {
-                $galleryError = 'Type de fichier non autorisé. Formats acceptés : jpg, jpeg, png, gif, webp.';
-            } else {
-                // Vérification que le fichier est bien une image
-                $imageInfo = @getimagesize($_FILES['image_file']['tmp_name']);
-                if ($imageInfo === false) {
-                    $galleryError = 'Le fichier sélectionné ne semble pas être une image valide.';
-                } else {
-                    $newName = 'img_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-
-                    if (move_uploaded_file($_FILES['image_file']['tmp_name'], $targetPath)) {
-                        // Redimensionne l'image principale (max 1200x1200) et crée une vignette
-                        $resizedOk = resize_image($targetPath, $targetPath, 1200, 1200, 85);
-                        $thumbPath = $uploadDir . DIRECTORY_SEPARATOR . 'thumb_' . $newName;
-                        $thumbOk = resize_image($targetPath, $thumbPath, 400, 300, 80);
-
-                        // Chemin utilisé côté web depuis /public/galerie.php
-                        $image_url = '../uploads/' . $newName;
-                        // note: vignette si disponible sera nommée ../uploads/thumb_$newName
-                    } else {
-                        $galleryError = "Erreur lors de l'upload du fichier.";
-                    }
-                }
-            }
-        }
-    }
-
-    if ($image_url === '' && $galleryError === '') {
-        $galleryError = "Veuillez fournir soit une URL d'image, soit un fichier à uploader.";
-    }
-
-    if ($galleryError === '' && $image_url !== '') {
-        $stmt = $pdo->prepare('INSERT INTO gallery (image_url, titre, retreat_url, retreat_id, created_at) VALUES (?, ?, ?, ?, NOW())');
-        $stmt->execute([
-            $image_url,
-            $titre !== '' ? $titre : null,
-            null,
-            $retreat_id
-        ]);
-        header('Location: admin.php?section=galerie&gallery_success=1');
-        exit;
-    }
-}
-
-if (isset($_GET['delete_gallery'])) {
-    $id = (int) $_GET['delete_gallery'];
-    $pdo->prepare('DELETE FROM gallery WHERE id = ?')->execute([$id]);
-    header('Location: admin.php?section=galerie&gallery_deleted=1');
-    exit;
-}
-
-// Gestion des programmes annuels (ajout)
-if (isset($_POST['add_programme'])) {
-    $mois = trim($_POST['prog_mois'] ?? '');
-    $titre = trim($_POST['prog_titre'] ?? '');
-    $theme = trim($_POST['prog_theme'] ?? '');
-    $details = trim($_POST['prog_details'] ?? '');
-    $prix = trim($_POST['prog_prix'] ?? '');
-    $date_debut = trim($_POST['prog_date_debut'] ?? '');
-    $date_fin = trim($_POST['prog_date_fin'] ?? '');
-    $ordre = isset($_POST['prog_ordre']) && $_POST['prog_ordre'] !== '' ? (int) $_POST['prog_ordre'] : 0;
-
-    // Upload éventuel d'une affiche d'image
-    $affiche_url = '';
-    if (!empty($_FILES['prog_affiche_file']['name']) && $_FILES['prog_affiche_file']['error'] === UPLOAD_ERR_OK) {
-        $maxSize = 2 * 1024 * 1024; // 2 Mo
-        if ($_FILES['prog_affiche_file']['size'] > $maxSize) {
-            $galleryError = 'Fichier trop volumineux (max 2 Mo).';
-        } else {
-            $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $originalName = basename($_FILES['prog_affiche_file']['name']);
-            $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-
-            if (!in_array($ext, $allowed, true)) {
-                $galleryError = 'Type de fichier non autorisé. Formats acceptés : jpg, jpeg, png, gif, webp.';
-            } else {
-                $imageInfo = @getimagesize($_FILES['prog_affiche_file']['tmp_name']);
-                if ($imageInfo === false) {
-                    $galleryError = 'Le fichier sélectionné ne semble pas être une image valide.';
-                } else {
-                    $newName = 'programme_affiche_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-
-                    if (move_uploaded_file($_FILES['prog_affiche_file']['tmp_name'], $targetPath)) {
-                        // Redimensionne l'affiche (max 1200x1200)
-                        resize_image($targetPath, $targetPath, 1200, 1200, 85);
-                        // Chemin utilisé côté web
-                        $affiche_url = '../uploads/' . $newName;
-                    } else {
-                        $galleryError = "Erreur lors de l'upload du fichier.";
-                    }
-                }
-            }
-        }
-    }
-
-    if ($mois !== '' && $titre !== '') {
-        $stmt = $pdo->prepare('INSERT INTO programmes (mois, titre, theme, details, prix, affiche_url, date_debut, date_fin, ordre, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-        $stmt->execute([
-            $mois,
-            $titre,
-            $theme !== '' ? $theme : null,
-            $details !== '' ? $details : null,
-            $prix !== '' ? $prix : null,
-            $affiche_url !== '' ? $affiche_url : null,
-            $date_debut !== '' ? $date_debut : null,
-            $date_fin !== '' ? $date_fin : null,
-            $ordre,
-        ]);
-    }
-    header('Location: admin.php?section=programmes&programme_success=1');
-    exit;
-}
-
-if (isset($_GET['delete_programme'])) {
-    $id = (int) $_GET['delete_programme'];
-    $pdo->prepare('DELETE FROM programmes WHERE id = ?')->execute([$id]);
-    header('Location: admin.php?section=programmes&programme_deleted=1');
-    exit;
-}
-
-if (isset($_POST['update_programme'])) {
-    $id = isset($_POST['programme_id']) ? (int) $_POST['programme_id'] : 0;
-    $mois = trim($_POST['prog_mois'] ?? '');
-    $titre = trim($_POST['prog_titre'] ?? '');
-    $theme = trim($_POST['prog_theme'] ?? '');
-    $details = trim($_POST['prog_details'] ?? '');
-    $date_debut = trim($_POST['prog_date_debut'] ?? '');
-    $date_fin = trim($_POST['prog_date_fin'] ?? '');
-    $ordre = isset($_POST['prog_ordre']) && $_POST['prog_ordre'] !== '' ? (int) $_POST['prog_ordre'] : 0;
-
-    if ($id > 0 && $mois !== '' && $titre !== '') {
-        // Récupère l'affiche actuelle
-        $affiche_url = null;
-        $stmt = $pdo->prepare('SELECT affiche_url FROM programmes WHERE id = ?');
-        $stmt->execute([$id]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row) {
-            $affiche_url = $row['affiche_url'];
-        }
-
-        // Nouvelle affiche éventuelle
-        if (!empty($_FILES['prog_affiche_file']['name']) && $_FILES['prog_affiche_file']['error'] === UPLOAD_ERR_OK) {
-            $maxSize = 2 * 1024 * 1024; // 2 Mo
-            if ($_FILES['prog_affiche_file']['size'] <= $maxSize) {
-                $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-                if (!is_dir($uploadDir)) {
-                    mkdir($uploadDir, 0777, true);
-                }
-
-                $originalName = basename($_FILES['prog_affiche_file']['name']);
-                $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-                $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-
-                if (in_array($ext, $allowed, true)) {
-                    $imageInfo = @getimagesize($_FILES['prog_affiche_file']['tmp_name']);
-                    if ($imageInfo !== false) {
-                        $newName = 'programme_affiche_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                        $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-
-                        if (move_uploaded_file($_FILES['prog_affiche_file']['tmp_name'], $targetPath)) {
-                            resize_image($targetPath, $targetPath, 1200, 1200, 85);
-                            $affiche_url = '../uploads/' . $newName;
-                        }
-                    }
-                }
-            }
-        }
-
-        $stmt = $pdo->prepare('UPDATE programmes SET mois = ?, titre = ?, theme = ?, details = ?, prix = ?, affiche_url = ?, date_debut = ?, date_fin = ?, ordre = ? WHERE id = ?');
-        $stmt->execute([
-            $mois,
-            $titre,
-            $theme !== '' ? $theme : null,
-            $details !== '' ? $details : null,
-            $prix !== '' ? $prix : null,
-            $affiche_url !== '' ? $affiche_url : null,
-            $date_debut !== '' ? $date_debut : null,
-            $date_fin !== '' ? $date_fin : null,
-            $ordre,
-            $id,
-        ]);
-    }
-    header('Location: admin.php?section=programmes');
-    exit;
-}
-
-// Outil admin: régénérer miniatures depuis l'interface (POST)
-$tool_message = '';
-if (isset($_POST['run_thumbs'])) {
-    $resizeOriginals = !empty($_POST['resize_originals']);
-    $uploadDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-    if (!is_dir($uploadDir)) {
-        $tool_message = 'Dossier uploads introuvable.';
-    } else {
-        $allowedExt = ['jpg','jpeg','png','gif','webp'];
-        $files = scandir($uploadDir);
-        $created = 0; $total = 0; $errors = 0;
-        foreach ($files as $f) {
-            if ($f === '.' || $f === '..') continue;
-            if (strpos($f, 'thumb_') === 0) continue;
-            $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
-            if (!in_array($ext, $allowedExt, true)) continue;
-            $total++;
-            $full = $uploadDir . DIRECTORY_SEPARATOR . $f;
-            if (!is_file($full)) continue;
-            $thumbFs = $uploadDir . DIRECTORY_SEPARATOR . 'thumb_' . $f;
-            if (!file_exists($thumbFs)) {
-                $ok = resize_image($full, $thumbFs, 400, 300, 80);
-                if ($ok) { $created++; } else { $errors++; }
-            }
-            if ($resizeOriginals) {
-                $bak = $full . '.bak';
-                if (!file_exists($bak)) copy($full, $bak);
-                $ok2 = resize_image($full, $full, 1200, 1200, 85);
-                if (!$ok2) $errors++;
-            }
-        }
-        $tool_message = "Traitement : fichiers analysés={$total}, vignettes créées={$created}, erreurs={$errors}.";
-    }
-}
-
-// Contacts & inscriptions
-$contacts = $pdo->query('SELECT * FROM contacts ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
-
-// Filtre inscriptions par temps de présence (GET insc_temps)
-$inscTempsFilter = isset($_GET['insc_temps']) ? trim($_GET['insc_temps']) : '';
-if ($inscTempsFilter === 'plein' || $inscTempsFilter === 'partiel') {
-    $val = ($inscTempsFilter === 'plein') ? 'Temps plein' : 'Temps partiel';
-    $stmt = $pdo->prepare('SELECT * FROM inscriptions WHERE temps_sejour = ? ORDER BY created_at DESC');
-    $stmt->execute([$val]);
-    $inscriptions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} else {
-    $inscriptions = $pdo->query('SELECT * FROM inscriptions ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
-}
-
-// Galerie
-$gallery = $pdo->query('SELECT * FROM gallery ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
-
-// Aperçu des fichiers uploads pour l'outil d'administration (section tools)
-$uploadsStats = null;
-$uploadDirFs = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'uploads';
-if ($uploadDirFs && is_dir($uploadDirFs)) {
-    $allFiles = scandir($uploadDirFs);
-    $files = [];
-    foreach ($allFiles as $f) {
-        if ($f === '.' || $f === '..') continue;
-        $full = $uploadDirFs . DIRECTORY_SEPARATOR . $f;
-        if (is_file($full)) $files[] = $f;
-    }
-
-    // Récupère les chemins en base
-    $refNames = [];
-
-    $gpaths = $pdo->query('SELECT image_url FROM gallery')->fetchAll(PDO::FETCH_COLUMN);
-    foreach ($gpaths as $p) { if ($p) $refNames[] = basename($p); }
-
-    $rpaths = $pdo->query('SELECT programme_image_url, fiche_url FROM retreats')->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($rpaths as $row) {
-        foreach (['programme_image_url','fiche_url'] as $k) {
-            if (!empty($row[$k])) $refNames[] = basename($row[$k]);
-        }
-    }
-
-    $ppaths = $pdo->query('SELECT affiche_url FROM programmes')->fetchAll(PDO::FETCH_COLUMN);
-    foreach ($ppaths as $p) { if ($p) $refNames[] = basename($p); }
-
-    $tpaths = $pdo->query('SELECT image_url FROM testimonials')->fetchAll(PDO::FETCH_COLUMN);
-    foreach ($tpaths as $p) { if ($p) $refNames[] = basename($p); }
-
-    $refSet = [];
-    foreach ($refNames as $name) {
-        if ($name !== '') $refSet[$name] = true;
-    }
-
-    $orphans = [];
-    $referencedCount = 0;
-    foreach ($files as $f) {
-        if (isset($refSet[$f])) {
-            $referencedCount++;
-        } else {
-            $orphans[] = $f;
-        }
-    }
-
-    $uploadsStats = [
-        'total' => count($files),
-        'referenced' => $referencedCount,
-        'orphans' => $orphans,
+// Statistiques globales pour le menu et certaines sections
+try {
+    $stats = [
+        'total_retreats' => (int) $pdo->query('SELECT COUNT(*) FROM retreats')->fetchColumn(),
+        'total_gallery' => (int) $pdo->query('SELECT COUNT(*) FROM gallery')->fetchColumn(),
+        'total_contacts' => (int) $pdo->query("SELECT COUNT(*) FROM contacts WHERE type = 'contact' OR type IS NULL")->fetchColumn(),
+        'total_partnerships' => (int) $pdo->query("SELECT COUNT(*) FROM contacts WHERE type = 'partnership'")->fetchColumn(),
+        'total_inscriptions' => (int) $pdo->query('SELECT COUNT(*) FROM inscriptions')->fetchColumn(),
+        'total_enseignements' => (int) $pdo->query("SELECT COUNT(*) FROM enseignements WHERE est_public = 1")->fetchColumn(),
+        'total_feedbacks' => (int) $pdo->query('SELECT COUNT(*) FROM feedbacks')->fetchColumn(),
+    ];
+} catch (Exception $e) {
+    // En cas d'erreur, on évite de casser tout l'admin
+    $stats = [
+        'total_retreats' => 0,
+        'total_gallery' => 0,
+        'total_contacts' => 0,
+        'total_partnerships' => 0,
+        'total_inscriptions' => 0,
+        'total_enseignements' => 0,
+        'total_feedbacks' => 0,
     ];
 }
 
-// --- Retraites: récupère liste d'années disponibles et résultats filtrés (optionnel)
-$retreatYears = [];
-$yrs = $pdo->query("SELECT DISTINCT YEAR(COALESCE(date_debut,date_fin)) AS y FROM retreats WHERE date_debut IS NOT NULL OR date_fin IS NOT NULL ORDER BY y DESC")->fetchAll(PDO::FETCH_ASSOC);
-foreach ($yrs as $row) {
-    if (!empty($row['y'])) $retreatYears[] = (int)$row['y'];
+// Section courante
+$section = isset($_GET['section']) ? preg_replace('/[^a-z_]/', '', $_GET['section']) : 'dashboard';
+
+// Valeurs par défaut pour éviter les notices
+$contacts = [];
+$feedbacks = [];
+$gallery = [];
+$retreats = [];
+$inscriptions = [];
+$inscTempsFilter = '';
+$uploadsStats = [
+    'total' => 0,
+    'referenced' => 0,
+    'orphans' => [],
+];
+$tool_message = '';
+
+// Vérification de la suppression d'une retraite
+if (isset($_GET['delete_retreat']) && is_numeric($_GET['delete_retreat'])) {
+    try {
+        $retreatId = (int)$_GET['delete_retreat'];
+        
+        // Récupérer le chemin de l'image avant de supprimer la retraite
+        $stmt = $pdo->prepare('SELECT programme_image_url FROM retreats WHERE id = ?');
+        $stmt->execute([$retreatId]);
+        $retreat = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($retreat) {
+            // D'abord, supprimer toutes les inscriptions liées à cette retraite
+            $deleteInscriptions = $pdo->prepare('DELETE FROM inscriptions WHERE event_type = "retraite" AND event_id = ?');
+            $deleteInscriptions->execute([$retreatId]);
+            
+            // Ensuite, supprimer la retraite de la base de données
+            $stmt = $pdo->prepare('DELETE FROM retreats WHERE id = ?');
+            $stmt->execute([$retreatId]);
+            
+            // Supprimer le fichier image associé s'il existe
+            if (!empty($retreat['programme_image_url'])) {
+                $imagePath = __DIR__ . '/..' . $retreat['programme_image_url'];
+                if (file_exists($imagePath)) {
+                    unlink($imagePath);
+                }
+            }
+            
+            // Redirection avec message de succès
+            header('Location: admin.php?section=retreats&retreat_deleted=1');
+            exit;
+        }
+    } catch (Exception $e) {
+        $retreatError = 'Erreur lors de la suppression de la retraite : ' . $e->getMessage();
+    }
 }
 
-$retreatsFilterYear = isset($_GET['retreat_year']) && is_numeric($_GET['retreat_year']) ? (int)$_GET['retreat_year'] : null;
-if ($retreatsFilterYear) {
-    $stmt = $pdo->prepare('SELECT * FROM retreats WHERE (YEAR(date_debut) = ? OR YEAR(date_fin) = ?) ORDER BY date_debut IS NULL, date_debut ASC, id ASC');
-    $stmt->execute([$retreatsFilterYear, $retreatsFilterYear]);
-    $retreats = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} else {
-    $retreats = $pdo->query('SELECT * FROM retreats ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
+// Logique de traitement des formulaires
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Traitement de la mise à jour du profil
+    if (isset($_POST['update_profile'])) {
+        try {
+            $full_name = trim($_POST['full_name'] ?? '');
+            $email = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
+            
+            // Validation
+            if (!$email) {
+                throw new Exception('Veuillez fournir une adresse email valide');
+            }
+            
+            // Gestion de l'upload de la photo de profil
+            $profile_image = null;
+            if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
+                $upload_dir = __DIR__ . '/../uploads/profiles/';
+                if (!is_dir($upload_dir)) {
+                    mkdir($upload_dir, 0755, true);
+                }
+                
+                $file_extension = strtolower(pathinfo($_FILES['profile_image']['name'], PATHINFO_EXTENSION));
+                $allowed_types = ['jpg', 'jpeg', 'png', 'gif'];
+                
+                if (!in_array($file_extension, $allowed_types)) {
+                    throw new Exception('Format de fichier non supporté. Formats acceptés : ' . implode(', ', $allowed_types));
+                }
+                
+                // Supprimer l'ancienne image si elle existe
+                if (!empty($_POST['current_profile_image'])) {
+                    $old_image = __DIR__ . '/..' . $_POST['current_profile_image'];
+                    if (file_exists($old_image)) {
+                        unlink($old_image);
+                    }
+                }
+                
+                $file_name = 'profile_' . $_SESSION['admin_username'] . '_' . time() . '.' . $file_extension;
+                $target_file = $upload_dir . $file_name;
+                
+                if (move_uploaded_file($_FILES['profile_image']['tmp_name'], $target_file)) {
+                    $profile_image = '/uploads/profiles/' . $file_name;
+                }
+            } else {
+                // Conserver l'image existante si aucune nouvelle n'est téléchargée
+                $profile_image = $_POST['current_profile_image'] ?? null;
+            }
+            
+            // Mise à jour dans la base de données
+            $sql = 'UPDATE admin_users SET email = :email';
+            $params = [
+                ':email' => $email,
+                ':username' => $current_username
+            ];
+            
+            // Ajouter le nom complet si la colonne existe
+            try {
+                $checkColumn = $pdo->query("SHOW COLUMNS FROM admin_users LIKE 'full_name'");
+                if ($checkColumn->rowCount() > 0) {
+                    $sql .= ', full_name = :full_name';
+                    $params[':full_name'] = $full_name ?: null;
+                    $_SESSION['admin_full_name'] = $full_name;
+                }
+            } catch (PDOException $e) {
+                // Si la colonne n'existe pas, on continue sans
+                error_log('Erreur lors de la vérification de la colonne full_name : ' . $e->getMessage());
+            }
+            
+            // Ajouter l'image de profil si elle a été téléchargée
+            if ($profile_image) {
+                try {
+                    $checkColumn = $pdo->query("SHOW COLUMNS FROM admin_users LIKE 'profile_image'");
+                    if ($checkColumn->rowCount() > 0) {
+                        $sql .= ', profile_image = :profile_image';
+                        $params[':profile_image'] = $profile_image;
+                    }
+                } catch (PDOException $e) {
+                    error_log('Erreur lors de la vérification de la colonne profile_image : ' . $e->getMessage());
+                }
+            }
+            
+            $sql .= ' WHERE username = :username';
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            
+            $successMessage = 'Profil mis à jour avec succès !';
+            
+        } catch (Exception $e) {
+            $errorMessage = 'Erreur lors de la mise à jour du profil : ' . $e->getMessage();
+        }
+    }
+    
+    // Traitement du changement de mot de passe
+    if (isset($_POST['change_password'])) {
+        try {
+            $current_password = $_POST['current_password'] ?? '';
+            $new_password = $_POST['new_password'] ?? '';
+            $confirm_password = $_POST['confirm_password'] ?? '';
+            
+            if (empty($current_password) || empty($new_password) || empty($confirm_password)) {
+                throw new Exception("Tous les champs sont obligatoires");
+            }
+            
+            if ($new_password !== $confirm_password) {
+                throw new Exception('Les nouveaux mots de passe ne correspondent pas');
+            }
+            
+            if (strlen($new_password) < 8) {
+                throw new Exception('Le mot de passe doit contenir au moins 8 caractères');
+            }
+            
+            // Vérifier le mot de passe actuel
+            $stmt = $pdo->prepare('SELECT password FROM admin_users WHERE username = ?');
+            $stmt->execute([$_SESSION['admin_username']]);
+            $user = $stmt->fetch();
+            
+            // Vérifier le mot de passe (dans un cas réel, il faudrait vérifier le hash)
+            if ($user['password'] !== $current_password) {
+                throw new Exception('Le mot de passe actuel est incorrect');
+            }
+            
+            // Dans un cas réel, il faudrait hasher le mot de passe
+            // $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
+            
+            // Mettre à jour le mot de passe
+            $stmt = $pdo->prepare('UPDATE admin_users SET password = :password WHERE username = :username');
+            $stmt->execute([
+                ':password' => $new_password, // À remplacer par $hashed_password en production
+                ':username' => $_SESSION['admin_username']
+            ]);
+            
+            $successMessage = 'Mot de passe mis à jour avec succès !';
+            
+        } catch (Exception $e) {
+            $errorMessage = 'Erreur lors du changement de mot de passe : ' . $e->getMessage();
+        }
+    }
+    
+    // Traitement de l'ajout ou de la mise à jour d'une photo de la galerie
+    if (isset($_POST['add_gallery']) || isset($_POST['update_gallery'])) {
+        try {
+            // Récupération des données du formulaire
+            $titre = trim($_POST['titre'] ?? '');
+            $retreat_id = !empty($_POST['retreat_id']) ? (int)$_POST['retreat_id'] : null;
+            $isUpdate = isset($_POST['update_gallery']);
+            $gallery_id = $isUpdate ? (int)$_POST['gallery_id'] : null;
+            
+            // Vérifier si une URL d'image est fournie
+            $image_url = trim($_POST['image_url'] ?? '');
+            
+            // Gestion de l'upload de l'image si un fichier est fourni
+            if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
+                $upload_dir = __DIR__ . '/../uploads/gallery/';
+                if (!is_dir($upload_dir)) {
+                    mkdir($upload_dir, 0755, true);
+                }
+                
+                $file_extension = strtolower(pathinfo($_FILES['image_file']['name'], PATHINFO_EXTENSION));
+                $file_name = 'gallery_' . time() . '_' . uniqid() . '.' . $file_extension;
+                $target_file = $upload_dir . $file_name;
+                
+                // Vérification du type de fichier
+                $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                if (!in_array($file_extension, $allowed_types)) {
+                    throw new Exception('Type de fichier non autorisé. Formats acceptés : ' . implode(', ', $allowed_types));
+                }
+                
+                // Vérification de la taille du fichier (max 5 Mo)
+                $max_size = 5 * 1024 * 1024; // 5 Mo
+                if ($_FILES['image_file']['size'] > $max_size) {
+                    throw new Exception('Le fichier est trop volumineux. Taille maximale : 5 Mo');
+                }
+                
+                // Déplacement du fichier uploadé
+                if (move_uploaded_file($_FILES['image_file']['tmp_name'], $target_file)) {
+                    $image_url = 'uploads/gallery/' . $file_name;
+                    
+                    // Si c'est une mise à jour, on supprime l'ancienne image si elle existe
+                    if ($isUpdate && !empty($_POST['old_image_url'])) {
+                        $old_image_path = __DIR__ . '/../' . $_POST['old_image_url'];
+                        if (file_exists($old_image_path)) {
+                            unlink($old_image_path);
+                        }
+                    }
+                } else {
+                    throw new Exception('Erreur lors de l\'upload du fichier');
+                }
+            } elseif ($isUpdate && empty($image_url)) {
+                // En mode édition, on conserve l'URL existante si aucune nouvelle image n'est fournie
+                $stmt = $pdo->prepare('SELECT image_url FROM gallery WHERE id = ?');
+                $stmt->execute([$gallery_id]);
+                $image_url = $stmt->fetchColumn();
+            }
+            
+            // Validation
+            if (empty($image_url)) {
+                throw new Exception('Veuillez fournir une image ou une URL valide');
+            }
+            
+            if ($isUpdate) {
+                // Mise à jour dans la base de données
+                $sql = 'UPDATE gallery SET titre = :titre, image_url = :image_url, retreat_id = :retreat_id';
+                
+                // Vérifier si la colonne updated_at existe
+                $stmtCheck = $pdo->query("SHOW COLUMNS FROM gallery LIKE 'updated_at'");
+                if ($stmtCheck->rowCount() > 0) {
+                    $sql .= ', updated_at = NOW()';
+                }
+                
+                $sql .= ' WHERE id = :id';
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([
+                    ':id' => $gallery_id,
+                    ':titre' => $titre ?: 'Photo sans titre',
+                    ':image_url' => $image_url,
+                    ':retreat_id' => $retreat_id
+                ]);
+                $successMessage = 'Photo mise à jour avec succès !';
+            } else {
+                // Insertion dans la base de données
+                $sql = 'INSERT INTO gallery (titre, image_url, retreat_id) VALUES (:titre, :image_url, :retreat_id)';
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([
+                    ':titre' => $titre ?: 'Photo sans titre',
+                    ':image_url' => $image_url,
+                    ':retreat_id' => $retreat_id
+                ]);
+                $successMessage = 'Photo ajoutée avec succès !';
+            }
+            
+            // Redirection avec message de succès
+            header('Location: admin.php?section=galerie&gallery_success=1');
+            exit;
+            
+        } catch (Exception $e) {
+            $galleryError = 'Erreur lors de l\'ajout de la photo : ' . $e->getMessage();
+        }
+    }
+    // Traitement de l'ajout/mise à jour d'une retraite
+    if (isset($_POST['add_retreat']) || isset($_POST['update_retreat'])) {
+        try {
+            // Récupération et validation des données du formulaire
+            $titre = trim($_POST['ret_titre'] ?? '');
+            $theme = trim($_POST['ret_theme'] ?? '');
+            $date_debut = !empty($_POST['ret_date_debut']) ? $_POST['ret_date_debut'] : null;
+            $date_fin = !empty($_POST['ret_date_fin']) ? $_POST['ret_date_fin'] : null;
+            $lieu = trim($_POST['ret_lieu'] ?? '');
+            $description = trim($_POST['ret_description'] ?? '');
+            $prix = isset($_POST['ret_prix']) ? (float)str_replace(',', '.', $_POST['ret_prix']) : 0;
+            $statut = $_POST['ret_statut'] ?? 'brouillon';
+            
+            // Validation minimale
+            if (empty($titre)) {
+                throw new Exception('Le titre est obligatoire');
+            }
+            
+            // Gestion de l'upload de l'image si fournie
+            $image_path = null;
+            if (isset($_FILES['ret_image_file']) && $_FILES['ret_image_file']['error'] === UPLOAD_ERR_OK) {
+                $upload_dir = __DIR__ . '/../uploads/retreats/';
+                if (!is_dir($upload_dir)) {
+                    mkdir($upload_dir, 0755, true);
+                }
+                
+                $file_extension = pathinfo($_FILES['ret_image_file']['name'], PATHINFO_EXTENSION);
+                $file_name = 'retraite_' . time() . '.' . $file_extension;
+                $target_file = $upload_dir . $file_name;
+                
+                // Vérification du type de fichier
+                $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                if (!in_array(strtolower($file_extension), $allowed_types)) {
+                    throw new Exception('Type de fichier non autorisé. Formats acceptés : ' . implode(', ', $allowed_types));
+                }
+                
+                // Déplacement du fichier uploadé
+                if (move_uploaded_file($_FILES['ret_image_file']['tmp_name'], $target_file)) {
+                    // Utiliser un chemin relatif à la racine du site
+                    $image_path = 'uploads/retreats/' . $file_name;
+                } else {
+                    throw new Exception('Erreur lors de l\'upload du fichier');
+                }
+            }
+            
+            // Préparation de la requête SQL
+            if (isset($_POST['add_retreat'])) {
+                // Insertion d'une nouvelle retraite
+                $sql = 'INSERT INTO retreats (titre, theme, date_debut, date_fin, lieu, description, prix' . ($image_path ? ', programme_image_url' : '') . ')';
+                $sql .= ' VALUES (:titre, :theme, :date_debut, :date_fin, :lieu, :description, :prix' . ($image_path ? ', :programme_image_url' : '') . ')';
+                
+                $stmt = $pdo->prepare($sql);
+                $params = [
+                    ':titre' => $titre,
+                    ':theme' => $theme ?: null,
+                    ':date_debut' => $date_debut,
+                    ':date_fin' => $date_fin,
+                    ':lieu' => $lieu ?: null,
+                    ':description' => $description ?: null,
+                    ':prix' => $prix
+                ];
+                
+                if ($image_path) {
+                    $params[':programme_image_url'] = $image_path;
+                }
+                
+                $stmt->execute($params);
+                $success_message = 'La retraite a été créée avec succès !';
+            } else {
+                // Mise à jour d'une retraite existante
+                $retreat_id = (int)$_POST['retreat_id'];
+                $sql = 'UPDATE retreats SET titre = :titre, theme = :theme, date_debut = :date_debut, date_fin = :date_fin, lieu = :lieu, description = :description, prix = :prix';
+                
+                if ($image_path) {
+                    $sql .= ', programme_image_url = :programme_image_url';
+                }
+                
+                $sql .= ' WHERE id = :id';
+                
+                $stmt = $pdo->prepare($sql);
+                $params = [
+                    ':id' => $retreat_id,
+                    ':titre' => $titre,
+                    ':theme' => $theme ?: null,
+                    ':date_debut' => $date_debut,
+                    ':date_fin' => $date_fin,
+                    ':lieu' => $lieu ?: null,
+                    ':description' => $description ?: null,
+                    ':prix' => $prix
+                ];
+                
+                if ($image_path) {
+                    $params[':programme_image_url'] = $image_path;
+                }
+                
+                $stmt->execute($params);
+                $success_message = 'La retraite a été mise à jour avec succès !';
+            }
+            
+            // Redirection avec un message de succès
+            header('Location: admin.php?section=retreats&retreat_created=1');
+            exit;
+            
+        } catch (Exception $e) {
+            $retreatError = 'Erreur lors de ' . (isset($_POST['add_retreat']) ? 'l\'ajout' : 'la mise à jour') . ' de la retraite : ' . $e->getMessage();
+        }
+    }
 }
 
-// --- Programmes: années disponibles et filtrage
-$programmeYears = [];
-$pyrs = $pdo->query("SELECT DISTINCT YEAR(COALESCE(date_debut,date_fin)) AS y FROM programmes WHERE date_debut IS NOT NULL OR date_fin IS NOT NULL ORDER BY y DESC")->fetchAll(PDO::FETCH_ASSOC);
-foreach ($pyrs as $row) {
-    if (!empty($row['y'])) $programmeYears[] = (int)$row['y'];
-}
-
-$programmeFilterYear = isset($_GET['programme_year']) && is_numeric($_GET['programme_year']) ? (int)$_GET['programme_year'] : null;
-if ($programmeFilterYear) {
-    $stmt = $pdo->prepare('SELECT * FROM programmes WHERE (YEAR(date_debut) = ? OR YEAR(date_fin) = ?) ORDER BY ordre ASC, id ASC');
-    $stmt->execute([$programmeFilterYear, $programmeFilterYear]);
-    $programmes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} else {
-    $programmes = $pdo->query('SELECT * FROM programmes ORDER BY ordre ASC, id ASC')->fetchAll(PDO::FETCH_ASSOC);
-}
-
-// Retraite sélectionnée pour édition (formulaire pré-rempli)
-$retreatToEdit = null;
-if (isset($_GET['section']) && $_GET['section'] === 'retreats' && isset($_GET['edit_retreat'])) {
-    $editId = (int) $_GET['edit_retreat'];
-    if ($editId > 0) {
-        $stmt = $pdo->prepare('SELECT * FROM retreats WHERE id = ?');
+// Gestion de l'édition d'une photo de la galerie
+if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
+    try {
+        $editId = (int)$_GET['edit'];
+        $stmt = $pdo->prepare('SELECT * FROM gallery WHERE id = ?');
         $stmt->execute([$editId]);
-        $retreatToEdit = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $photoToEdit = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($photoToEdit) {
+            // Si on a une photo à éditer, on force le mode ajout avec les données existantes
+            $_GET['add'] = 'new';
+            $isAdding = true;
+        }
+    } catch (Exception $e) {
+        $galleryError = 'Erreur lors de la récupération de la photo : ' . $e->getMessage();
     }
 }
 
-// Programme annuel sélectionné pour édition
-$programmeToEdit = null;
-if (isset($_GET['section']) && $_GET['section'] === 'programmes' && isset($_GET['edit_programme'])) {
-    $editProgId = (int) $_GET['edit_programme'];
-    if ($editProgId > 0) {
-        $stmt = $pdo->prepare('SELECT * FROM programmes WHERE id = ?');
-        $stmt->execute([$editProgId]);
-        $programmeToEdit = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+// Préparation des données selon la section (logique minimale pour éviter les erreurs)
+try {
+    // Chargement des retraites pour la section des retraites
+    if ($section === 'retreats') {
+        // Récupérer l'année de filtrage si spécifiée
+        $retreatsFilterYear = isset($_GET['retreat_year']) ? (int)$_GET['retreat_year'] : null;
+        
+        // Charger les détails de la retraite à éditer si l'ID est fourni
+        $retreatToEdit = null;
+        if (isset($_GET['edit_retreat']) && is_numeric($_GET['edit_retreat'])) {
+            $stmt = $pdo->prepare('SELECT * FROM retreats WHERE id = ?');
+            $stmt->execute([(int)$_GET['edit_retreat']]);
+            $retreatToEdit = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$retreatToEdit) {
+                // Rediriger si la retraite n'existe pas
+                header('Location: admin.php?section=retreats');
+                exit;
+            }
+        }
+        
+        // Requête de base pour récupérer les retraites
+        $sql = 'SELECT * FROM retreats';
+        $params = [];
+        
+        // Ajout du filtre par année si spécifié
+        if ($retreatsFilterYear) {
+            $sql .= ' WHERE YEAR(date_debut) = :year OR YEAR(date_fin) = :year';
+            $params[':year'] = $retreatsFilterYear;
+        }
+        
+        // Trier par date de début (les plus récentes en premier)
+        $sql .= ' ORDER BY date_debut DESC';
+        
+        // Préparation et exécution de la requête
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $retreats = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        
+        // Récupérer la liste des années disponibles pour le filtre
+        $stmt = $pdo->query('SELECT DISTINCT YEAR(date_debut) as year FROM retreats WHERE date_debut IS NOT NULL UNION SELECT DISTINCT YEAR(date_fin) as year FROM retreats WHERE date_fin IS NOT NULL ORDER BY year DESC');
+        $retreatYears = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } elseif ($section === 'contacts') {
+        $stmt = $pdo->query("SELECT * FROM contacts WHERE type = 'contact' OR type IS NULL ORDER BY created_at DESC");
+        $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } elseif ($section === 'partnerships') {
+        $stmt = $pdo->query("SELECT * FROM contacts WHERE type = 'partnership' ORDER BY created_at DESC");
+        $contacts = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } elseif ($section === 'feedbacks') {
+        $stmt = $pdo->query('SELECT * FROM feedbacks ORDER BY created_at DESC');
+        $feedbacks = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } elseif ($section === 'galerie') {
+        // Suppression simple d’une image de galerie
+        if (isset($_GET['delete_gallery']) && ctype_digit((string) $_GET['delete_gallery'])) {
+            $id = (int) $_GET['delete_gallery'];
+            $del = $pdo->prepare('DELETE FROM gallery WHERE id = ?');
+            $del->execute([$id]);
+            header('Location: admin.php?section=galerie&gallery_deleted=1');
+            exit;
+        }
+
+        $stmt = $pdo->query('SELECT * FROM gallery ORDER BY created_at DESC');
+        $gallery = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        // Liste des retraites pour l’association éventuelle
+        $stmt = $pdo->query('SELECT id, titre FROM retreats ORDER BY date_debut DESC');
+        $retreats = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } elseif ($section === 'inscriptions' || $section === 'inscriptions_gestion') {
+        $inscTempsFilter = isset($_GET['insc_temps']) ? $_GET['insc_temps'] : '';
+
+        $sql = 'SELECT * FROM inscriptions';
+        if ($section === 'inscriptions_gestion' && in_array($inscTempsFilter, ['plein', 'partiel'], true)) {
+            // Correspondance simple avec les libellés stockés
+            $value = $inscTempsFilter === 'plein' ? 'Temps plein' : 'Temps partiel';
+            $sql .= " WHERE temps_sejour = " . $pdo->quote($value);
+        }
+        $sql .= ' ORDER BY created_at DESC';
+
+        $stmt = $pdo->query($sql);
+        $inscriptions = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
+} catch (Exception $e) {
+    // On ne bloque pas l’affichage de l’admin si une requête échoue
 }
+
 ?>
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Admin EDEN</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin EDEN - Tableau de Bord</title>
     <link rel="stylesheet" href="../assets/css/main.css">
     <link rel="stylesheet" href="../assets/css/admin.css">
 </head>
 <body>
-    <div class="admin-header">
-        <div style="display:flex; align-items:center; gap:12px;">
-            <img src="../Logo Initiales Nominatif Moderne Minimal Blanc Orange Noir.png" alt="EDEN" style="height:40px; width:auto; display:block;">
-            <h1 style="margin:0;"><span style="font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">EDEN</span> <span style="font-weight:400; opacity:0.9;">Administration</span></h1>
-        </div>
-        <div>
-            <a href="../index.php" style="color:#fff; margin-right:15px; font-weight:600;">Retour au site</a>
-            <a href="?logout=1" style="color:#fff; font-weight:600;">Se déconnecter</a>
+    <?php include 'partials/menu.php'; ?>
+    
+    <div class="admin-main-content">
+        <div class="admin-header">
+            <div class="admin-header-left">
+                <img src="../Logo Initiales Nominatif Moderne Minimal Blanc Orange Noir.png" alt="EDEN" style="height:35px; width:auto; display:block;">
+                <h1>Tableau de Bord</h1>
+            </div>
+            <div class="admin-header-right">
+                <div class="admin-user">
+                    <span>Bienvenue, <?php echo htmlspecialchars($admin_info['full_name'] ?? 'Admin'); ?></span>
+                    <div class="admin-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="admin-info">
+                        <div class="admin-name"><?php echo htmlspecialchars($admin_info['full_name'] ?? $admin_info['username']); ?></div>
+                        <div class="admin-role">Administrateur</div>
+                    </div>
+                </div>
+            </div>
+            <div class="admin-header-actions">
+                <a href="../index.php" target="_blank" class="btn-icon" title="Voir le site">
+                    <span>👁️</span>
+                </a>
+                <a href="?section=account" class="btn-icon" title="Mon compte">
+                    <span>⚙️</span>
+                </a>
+                <a href="logout.php" class="btn-icon" title="Déconnexion">
+                    <span>🚪</span>
+                </a>
+            </div>
         </div>
     </div>
 
@@ -836,22 +617,72 @@ if (isset($_GET['section']) && $_GET['section'] === 'programmes' && isset($_GET[
         <aside class="admin-sidebar">
             <nav>
                 <?php $section = isset($_GET['section']) ? preg_replace('/[^a-z_]/','', $_GET['section']) : 'dashboard'; ?>
-                <a href="?section=dashboard" class="<?php echo $section === 'dashboard' ? 'active' : ''; ?>">Tableau de bord</a>
-                <a href="?section=retreats" class="<?php echo $section === 'retreats' ? 'active' : ''; ?>">Retraites <span style="float:right;" class="badge"><?php echo count($retreats); ?></span></a>
-                <a href="?section=programmes" class="<?php echo $section === 'programmes' ? 'active' : ''; ?>">Programmes <span style="float:right;" class="badge"><?php echo count($programmes); ?></span></a>
-                <a href="?section=galerie" class="<?php echo $section === 'galerie' ? 'active' : ''; ?>">Galerie <span style="float:right;" class="badge"><?php echo count($gallery); ?></span></a>
-                <a href="?section=inscriptions_gestion" class="<?php echo $section === 'inscriptions_gestion' ? 'active' : ''; ?>">Inscriptions <span style="float:right;" class="badge"><?php echo count($inscriptions); ?></span></a>
-                <a href="?section=contacts" class="<?php echo $section === 'contacts' ? 'active' : ''; ?>">Contacts <span style="float:right;" class="badge"><?php echo count($contacts); ?></span></a>
-                <a href="?section=horaires" class="<?php echo $section === 'horaires' ? 'active' : ''; ?>">Horaires</a>
-                <a href="?section=account" class="<?php echo $section === 'account' ? 'active' : ''; ?>">Compte</a>
-                <a href="?section=testimonials" class="<?php echo $section === 'testimonials' ? 'active' : ''; ?>">Témoignages</a>
+                <a href="?section=dashboard" class="<?php echo $section === 'dashboard' ? 'active' : ''; ?>">
+                    <span>📊</span>
+                    Tableau de bord
+                </a>
+                <a href="?section=retreats" class="<?php echo $section === 'retreats' ? 'active' : ''; ?>">
+                    <span>📅</span>
+                    Retraites 
+                    <span class="badge"><?php echo $stats['total_retreats']; ?></span>
+                </a>
+                <a href="?section=galerie" class="<?php echo $section === 'galerie' ? 'active' : ''; ?>">
+                    <span>🖼️</span>
+                    Galerie 
+                    <span class="badge"><?php echo $stats['total_gallery']; ?></span>
+                </a>
+                <a href="?section=inscriptions_gestion" class="<?php echo $section === 'inscriptions_gestion' ? 'active' : ''; ?>">
+                    <span>✍️</span>
+                    Inscriptions 
+                    <span class="badge"><?php echo $stats['total_inscriptions']; ?></span>
+                </a>
+                <a href="?section=contacts" class="<?php echo $section === 'contacts' ? 'active' : ''; ?>">
+                    <span>📞</span>
+                    Contacts 
+                    <span class="badge"><?php echo $stats['total_contacts']; ?></span>
+                </a>
+                <a href="?section=partnerships" class="<?php echo $section === 'partnerships' ? 'active' : ''; ?>">
+                    <span>🤝</span>
+                    Partenaires
+                    <span class="badge"><?php echo $stats['total_partnerships']; ?></span>
+                </a>
+                <a href="?section=feedbacks" class="<?php echo $section === 'feedbacks' ? 'active' : ''; ?>">
+                    <span>💬</span>
+                    Feedbacks
+                    <span class="badge"><?php echo $stats['total_feedbacks']; ?></span>
+                </a>
+                <a href="?section=horaires" class="<?php echo $section === 'horaires' ? 'active' : ''; ?>">
+                    <span>⏰</span>
+                    Horaires
+                </a>
+                <a href="?section=testimonials" class="<?php echo $section === 'testimonials' ? 'active' : ''; ?>">
+                    <span>💬</span>
+                    Témoignages
+                </a>
+                <a href="?section=enseignements" class="<?php echo $section === 'enseignements' ? 'active' : ''; ?>">
+                    <span>📚</span>
+                    Enseignements
+                    <span class="badge"><?php echo $stats['total_enseignements']; ?></span>
+                </a>
+                <a href="?section=account" class="<?php echo $section === 'account' ? 'active' : ''; ?>">
+                    <span>👤</span>
+                    Compte
+                </a>
             </nav>
         </aside>
 
         <main class="admin-main">
             <?php
-            // ajout des sections 'dashboard', 'tools' et 'programmes' pour gestion globale
-            $allowed = ['dashboard','tools','programmes','retreats','galerie','contacts','inscriptions','inscriptions_gestion','horaires','account','testimonials'];
+            // Gestion de la suppression des feedbacks
+            if (isset($_GET['delete_feedback']) && is_numeric($_GET['delete_feedback'])) {
+                $id = (int)$_GET['delete_feedback'];
+                $stmt = $pdo->prepare('DELETE FROM feedbacks WHERE id = ?');
+                $stmt->execute([$id]);
+                header('Location: admin.php?section=feedbacks&feedback_deleted=1');
+                exit();
+            }
+            
+            $allowed = ['dashboard','tools','programmes','retreats','galerie','contacts','partnerships','feedbacks','inscriptions','inscriptions_gestion','horaires','account','testimonials','enseignements'];
             if (!in_array($section, $allowed, true)) {
                 $section = 'dashboard';
             }
@@ -866,49 +697,16 @@ if (isset($_GET['section']) && $_GET['section'] === 'programmes' && isset($_GET[
     </div>
 
     <script>
-        (function() {
-            const fileInput = document.getElementById('image_file');
-            const urlInput = document.getElementById('image_url');
-            const preview = document.getElementById('preview-img');
-
-            function showPreviewFromFile(file) {
-                if (!file || !preview) return;
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    preview.src = e.target.result;
-                    preview.style.display = 'block';
-                };
-                reader.readAsDataURL(file);
-            }
-
-            function showPreviewFromUrl(url) {
-                if (!preview) return;
-                if (!url) {
-                    preview.style.display = 'none';
-                    preview.src = '';
-                    return;
-                }
-                preview.src = url;
-                preview.style.display = 'block';
-            }
-
-            if (fileInput) {
-                fileInput.addEventListener('change', function() {
-                    const file = this.files && this.files[0];
-                    if (file) {
-                        showPreviewFromFile(file);
-                    }
-                });
-            }
-
-            if (urlInput) {
-                urlInput.addEventListener('input', function() {
-                    if (this.value.trim() !== '') {
-                        showPreviewFromUrl(this.value.trim());
-                    }
-                });
-            }
-        })();
+        // Animation pour les cartes de métriques
+        document.addEventListener('DOMContentLoaded', function() {
+            const metricCards = document.querySelectorAll('.metric-card');
+            metricCards.forEach((card, index) => {
+                card.style.animationDelay = `${index * 0.1}s`;
+                card.classList.add('animate-in');
+            });
+        });
     </script>
 </body>
 </html>
+
+<?php ob_end_flush(); ?>

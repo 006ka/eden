@@ -1,7 +1,57 @@
 <?php
 require_once __DIR__ . '/config/db.php';
-// On récupère les 6 dernières photos de la galerie pour l'accueil
-$homePhotos = $pdo->query('SELECT * FROM gallery ORDER BY id DESC LIMIT 6')->fetchAll(PDO::FETCH_ASSOC);
+// Récupération des affiches des retraites pour le slider
+$sliderPhotos = [];
+try {
+    // Récupère jusqu'à 6 affiches de retraites (à venir ou en cours en priorité)
+    $sliderPhotos = $pdo->query("
+        SELECT id, titre, programme_image_url AS image_url, date_debut, date_fin 
+        FROM retreats 
+        WHERE programme_image_url IS NOT NULL 
+        AND programme_image_url != '' 
+        ORDER BY 
+            CASE 
+                WHEN date_fin >= CURDATE() OR date_debut >= CURDATE() THEN 0 
+                ELSE 1 
+            END,
+            COALESCE(date_debut, date_fin) ASC
+        LIMIT 6
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    $sliderPhotos = [];
+}
+
+// Récupération des images de la galerie pour la section "Moments des retraites précédentes"
+$galleryPhotos = [];
+try {
+    // Récupère les images de la galerie des retraites précédentes
+    $galleryPhotos = $pdo->query("
+        SELECT g.*, r.id AS retreat_id, r.titre, r.date_debut, r.date_fin 
+        FROM gallery g
+        LEFT JOIN retreats r ON g.retreat_id = r.id
+        WHERE (r.date_fin < CURDATE() OR r.date_debut < CURDATE())
+        ORDER BY COALESCE(r.date_fin, r.date_debut) DESC, g.id DESC 
+        LIMIT 6
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Si pas assez d'images, on complète avec des images plus anciennes
+    if (count($galleryPhotos) < 6) {
+        $limit = 6 - count($galleryPhotos);
+        $older = $pdo->query("
+            SELECT g.*, r.id AS retreat_id, r.titre, r.date_debut, r.date_fin 
+            FROM gallery g
+            LEFT JOIN retreats r ON g.retreat_id = r.id
+            ORDER BY g.id DESC 
+            LIMIT $limit
+        ")->fetchAll(PDO::FETCH_ASSOC);
+        $galleryPhotos = array_merge($galleryPhotos, $older);
+    }
+} catch (Exception $e) {
+    $galleryPhotos = [];
+}
+
+// Pour la rétrocompatibilité, on garde $homePhotos pour les sections existantes
+$homePhotos = $galleryPhotos;
 // Prépare des images pour la section "Enseignements & Méditations" (3 vignettes)
 $sermonImages = [];
 if (!empty($homePhotos)) {
@@ -27,6 +77,16 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
 } else {
     $sermonSidebarImage = 'assets/img/hero-placeholder.jpg';
 }
+// Récupère la prochaine retraite (date de début ou fin >= aujourd'hui)
+$nextRetreat = null;
+try {
+    $stmt = $pdo->prepare("SELECT * FROM retreats WHERE (date_debut IS NOT NULL AND date_debut >= CURDATE()) OR (date_fin IS NOT NULL AND date_fin >= CURDATE()) ORDER BY COALESCE(date_debut,date_fin) ASC LIMIT 1");
+    $stmt->execute();
+    $nextRetreat = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    // ignore DB errors for homepage fallback
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -37,12 +97,17 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
     <link rel="stylesheet" href="assets/css/main.css">
     <style>
         /* Inline slideshow styles for hero */
-        .hero-section { position: relative; overflow: hidden; }
+        .hero-section { position: relative; overflow: hidden; height: 520px; }
         .hero-slides { position: absolute; inset: 0; z-index: 0; }
-        .hero-slide { position: absolute; inset: 0; background-size: cover; background-position: center; background-repeat: no-repeat; opacity: 0; transition: opacity 1s ease-in-out; }
+        .hero-slide { position: absolute; inset: 0; background-size: cover; background-position: center center; background-repeat: no-repeat; opacity: 0; transition: opacity 1s ease-in-out; }
         .hero-slide.active { opacity: 1; }
+        .hero-slide-link { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; }
         .hero-section .overlay { position: absolute; inset: 0; z-index: 1; }
-        .hero-content { position: relative; z-index: 2; }
+        /* remove textual overlay but keep buttons visible */
+        .hero-content { position: relative; z-index: 2; display: flex; align-items: flex-end; height: 100%; }
+        .hero-content .hero-inner { width:100%; padding: 30px 0; text-align: left; }
+        .hero-content h1, .hero-content .subtitle { display: none; }
+        .hero-buttons { z-index:3; }
     </style>
 </head>
 <body>
@@ -50,12 +115,17 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
     <section class="hero-section hero-home">
         <div class="hero-slides">
             <?php
-            if (!empty($homePhotos)) {
-                foreach ($homePhotos as $i => $p) {
+            if (!empty($sliderPhotos)) {
+                foreach ($sliderPhotos as $i => $p) {
                     $src = $p['image_url'];
                     if (strpos($src, '../') === 0) $src = substr($src, 3);
                     $activeClass = $i === 0 ? ' active' : '';
-                    echo '<div class="hero-slide' . $activeClass . '" style="background-image: url(' . htmlspecialchars($src) . ');"></div>' . "\n";
+                    $retreatId = $p['id'] ?? null;
+                    echo '<div class="hero-slide' . $activeClass . '" style="background-image: url(' . htmlspecialchars($src) . ');">';
+                    if ($retreatId) {
+                        echo '<a href="retraite.php?id=' . $retreatId . '" class="hero-slide-link"></a>';
+                    }
+                    echo '</div>' . "\n";
                 }
             } else {
                 // fallback image
@@ -65,118 +135,216 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
         </div>
         <div class="overlay"></div>
         <div class="container hero-content">
-            <p class="new-here-link">NOUVEAU ICI ?</p>
-            <h1>VIVRE LA PRÉSENCE DE DIEU AVEC EDEN</h1>
-            <p class="subtitle">Retraites spirituelles, temps de prière et enseignements pour une vie transformée en Christ.</p>
-            <div class="hero-buttons">
-                <a href="public/inscription.php" class="btn btn-red">S'inscrire à la prochaine retraite</a>
-                <a href="public/programmes.php" class="btn btn-border">Découvrir nos programmes</a>
+            <div class="hero-inner">
+                <!-- Bouton d'inscription supprimé à la demande -->
             </div>
         </div>
     </section>
 
-    <section class="events-bar">
-        <div class="container event-grid">
-            <div class="event-item">
-                <p class="date">PROCHAINE RETRAITE</p>
-                <p class="title">Rencontre et Transformation</p>
-                <p class="time">Dates : à confirmer</p>
-            </div>
-            <div class="event-item">
-                <p class="date">RENCONTRES HEBDOMADAIRES</p>
-                <p class="title">Temps de prière & partage</p>
-                <p class="time">Chaque jeude de 22H a 2H</p>
-            </div>
-            <div class="event-item">
-                <p class="date">JEUNES & JEUNES ADULTES</p>
-                <p class="title">Groupe EDEN Jeunes</p>
-                <p class="time">Rencontres régulières</p>
-            </div>
-            <div class="event-item last-event">
-                <p class="date">SOUTENIR LE MINISTÈRE</p>
-                <p class="title">Prières & partenariat</p>
-                <p class="time">Impliquons-nous ensemble</p>
-            </div>
-            <a href="public/programmes.php" class="more-events-btn">VOIR LES ACTIVITÉS →</a>
-        </div>
-    </section>
+    <!-- Section Prochaine Retraite -->
+    <?php
+    // Récupération de la prochaine retraite
+    $nextRetreat = null;
+    try {
+        $nextRetreat = $pdo->query("
+            SELECT * FROM retreats 
+            WHERE (date_debut >= CURDATE() OR date_fin >= CURDATE())
+            ORDER BY COALESCE(date_debut, date_fin) ASC 
+            LIMIT 1
+        ")->fetch(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $nextRetreat = null;
+    }
+    
+    if ($nextRetreat):
+        $retDates = $nextRetreat['date_debut'];
+        if (!empty($nextRetreat['date_fin']) && $nextRetreat['date_fin'] !== $nextRetreat['date_debut']) {
+            $retDates .= ' - ' . $nextRetreat['date_fin'];
+        }
+        $retLieu = $nextRetreat['lieu'] ?? 'Lieu à préciser';
+        $retOrateurs = $nextRetreat['orateurs'] ?? 'Intervenants à confirmer';
+        $retPrix = $nextRetreat['prix'] ?? '';
+        $retFicheUrl = $nextRetreat['fiche_url'] ?? '';
+        $programmeImage = $nextRetreat['programme_image_url'] ?? '';
+    ?>
+    <section class="contact-map-section" style="padding: 60px 0; background-color: #f9f9f9;">
+        <div class="container">
+            <h2 style="font-size: 2em; font-weight: 700; margin-bottom: 30px; text-align: center;">Prochaine Retraite</h2>
+            <div class="contact-grid">
+                <div class="contact-info">
+                    <h3 style="font-size: 1.5em; font-weight: 700; margin-bottom: 20px; color: var(--color-primary);">
+                        <?php echo htmlspecialchars($nextRetreat['titre']); ?>
+                    </h3>
+                    <div style="margin-bottom: 15px; line-height: 1.6;">
+                        <?php if (!empty($nextRetreat['description'])): ?>
+                            <p style="margin-bottom: 20px;"><?php echo nl2br(htmlspecialchars($nextRetreat['description'])); ?></p>
+                        <?php endif; ?>
+                        
+                        <div style="background: white; padding: 20px; border-radius: var(--radius); box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                            <h4 style="font-weight: 700; margin-bottom: 15px; color: var(--dark-text);">Détails pratiques</h4>
+                            
+                            <?php if (!empty($retDates)): ?>
+                                <div style="margin-bottom: 12px;">
+                                    <strong>📅 Dates :</strong><br>
+                                    <?php echo htmlspecialchars($retDates); ?>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div style="margin-bottom: 12px;">
+                                <strong>📍 Lieu :</strong><br>
+                                <?php echo nl2br(htmlspecialchars($retLieu)); ?>
+                            </div>
 
-    <section class="contact-map-section">
-        <div class="container contact-grid">
-            <div class="contact-info">
-                <p><strong>MINISTÈRE EDEN</strong></p>
-                <p><strong>Lieu de retraite : communiqué lors de l'inscription</strong></p>
-                <p class="separator">-------------------</p>
-                <p>Retraites spirituelles, séminaires et rencontres de prière.</p>
-                <p>
-                    <a href="mailto:contact@eden-ministere.org">contact@eden-ministere.org</a>
-                </p>
-            </div>
-            <div class="map-card" style="border-radius:8px; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,0.08);">
-                <div class="map-iframe-wrapper" style="width:100%; height:260px; background:#f0f0f0;">
-                    <!-- OpenStreetMap embed centered on the exact point you provided (Ruashi Kundelungu) -->
-                    <iframe
-                        src="https://www.openstreetmap.org/export/embed.html?bbox=27.53008%2C-11.64649%2C27.54008%2C-11.63649&layer=mapnik&marker=-11.64149%2C27.53508"
-                        width="100%" height="100%" style="border:0;"
-                        allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                            <div style="margin-bottom: 12px;">
+                                <strong>⛪ Intervenants :</strong><br>
+                                <?php echo htmlspecialchars($retOrateurs); ?>
+                            </div>
+
+                            <?php if (!empty($retPrix)): ?>
+                                <div style="margin-bottom: 12px;">
+                                    <strong>💳 Participation :</strong><br>
+                                    <?php echo htmlspecialchars($retPrix); ?>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div class="separator" style="text-align: center; margin: 15px 0; color: #ccc;">· · ·</div>
+                            
+                            <div style="margin-top: 15px;">
+                                <strong>🎯 Au programme :</strong><br>
+                                Louange, Enseignements, Ateliers, Prière, Délivrance
+                            </div>
+
+                            <div style="margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px;">
+                                <a href="public/retraite.php?id=<?php echo (int)$nextRetreat['id']; ?>" class="btn btn-primary" style="text-decoration: none;">
+                                    ℹ️ Plus d'informations
+                                </a>
+                                <a href="public/inscription.php?type=retraite&amp;id=<?php echo (int)$nextRetreat['id']; ?>&amp;label=<?php echo urlencode($nextRetreat['titre']); ?>" class="btn btn-secondary" style="text-decoration: none;">
+                                    🙋 Je m'inscris
+                                </a>
+                                <?php if (!empty($retFicheUrl)): ?>
+                                    <a href="<?php echo htmlspecialchars($retFicheUrl); ?>" class="btn btn-outline" style="text-decoration: none;" download>
+                                        📄 Fiche pratique
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="map-links" style="display:flex; gap:12px; padding:12px; align-items:center;">
-                    <a href="https://www.openstreetmap.org/?mlat=-11.64149&mlon=27.53508#map=18/-11.64149/27.53508" target="_blank" rel="noopener" class="btn btn-border">Voir sur OpenStreetMap</a>
-                    <a href="public/contact.php" class="btn">NOUS CONTACTER</a>
-                    <a href="public/apropos.php" class="link">EN SAVOIR PLUS</a>
-                </div>
+                
+                <?php if (!empty($programmeImage)): 
+                    // Normaliser le chemin pour affichage dans le navigateur
+                    $img = $programmeImage;
+                    // Retirer les préfixes relatifs
+                    $img = preg_replace('#^(\./|/\./|\.\./)+#', '', $img);
+                    // Si commence par '../' ou './' la regex ci-dessus retire ces parties
+
+                    // Si le chemin contient 'uploads' on l'utilise tel quel (relatif)
+                    if (stripos($img, 'uploads/') !== false) {
+                        // garder tel quel
+                        $imageSrc = $img;
+                    } else {
+                        // sinon, essayer d'utiliser le fichier tel quel ou comme basename sous uploads/
+                        $candidate = ltrim($img, '/');
+                        if ($candidate === '' ) {
+                            $imageSrc = '';
+                        } else {
+                            // si le candidat semble être un chemin absolu (http...), on le garde
+                            if (preg_match('#^https?://#i', $candidate)) {
+                                $imageSrc = $candidate;
+                            } else {
+                                // vérifier si fichier existe dans /uploads/ avec basename
+                                $base = basename($candidate);
+                                $uploadsRel = 'uploads/' . $base;
+                                $uploadsFull = __DIR__ . '/../' . $uploadsRel;
+                                if (file_exists($uploadsFull)) {
+                                    $imageSrc = $uploadsRel;
+                                } else {
+                                    // sinon, utiliser le candidat tel quel
+                                    $imageSrc = $candidate;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!empty($imageSrc)) {
+                        // ajouter timestamp pour forcer le rechargement si besoin
+                        $sep = (strpos($imageSrc, '?') === false) ? '?' : '&';
+                        $imageSrcWithTs = $imageSrc . $sep . 't=' . time();
+                ?>
+                    <div style="background: white; padding: 20px; border-radius: var(--radius); box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                        <h4 style="font-weight: 700; margin-bottom: 15px; color: var(--dark-text);">Programme détaillé</h4>
+                        <div style="background: var(--light-bg); padding: 15px; border-radius: var(--radius); text-align: center;">
+                            <img src="<?php echo htmlspecialchars($imageSrcWithTs); ?>" 
+                                 alt="Programme de la retraite" 
+                                 style="max-width: 100%; height: auto; border-radius: 4px;"
+                                 onerror="console.error('Erreur de chargement de l\'image:', this.src); this.parentNode.style.display='none';">
+                        </div>
+                    </div>
+                <?php }
+                endif; ?>
             </div>
         </div>
     </section>
+    <?php endif; ?>
 
-    <section class="secondary-blocks">
-        <div class="container block-grid">
-            <div class="block block-worship">
-                <h2>Adoration</h2>
-                <p>
-                    Des personnes passionnées par Dieu, qui se laissent déborder par Lui
-                    et qui grandissent avec transformation dans leur relation avec Lui.
-                </p>
+    <!-- events-bar moved below the gallery per user request -->
+
             </div>
-            <div class="block block-calendar">
-                <h2>Maturité</h2>
-                <p>
-                    Des personnes passionnées de Dieu, qui ont découvert leur but et
-                    qui s’engagent au prix de leur vie à l’enfanter par la croissance.
-                </p>
-            </div>
-            <div class="block block-ministries">
-                <h2>Impact</h2>
-                <p>
-                    Des personnes capables d’affecter la vie des autres, pour participer
-                    à leurs promotions au rang de l’Elite royal.
-                </p>
-            </div>
-            <div class="block block-missions">
-                <h2>Service</h2>
-                <p>
-                    Des personnes autonomes et non codépendantes, celles qui prospèrent
-                    pour toujours avoir de quoi donner.
-                </p>
-            </div>
-            <div class="block block-authentic">
-                <h2>Fraternité</h2>
-                <p>
-                    Des personnes passionnées par les gens, pour les aimer et les honorer
-                    sans limites, des personnes qui se purifient et se gardent pour les autres.
-                </p>
+            
+        </div>
+    </section>
+    <!-- Section Activité principale (ajoutée) -->
+    <section class="activities-section" style="padding: 60px 0; background-color: #fff;">
+        <div class="container">
+            <h2 style="font-size: 1.8em; font-weight:700; margin-bottom: 20px; color: var(--color-primary);">Activité principale</h2>
+            <div class="grid activities-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:18px;">
+                <article class="activity-card" style="background: #fff; border-radius:8px; padding:12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align:left;">
+                    <div class="activity-thumb" style="background-image: url('img/WhatsApp Image 2026-01-01 at 21.39.35.jpeg'); background-size:cover; background-position:center; height:140px; border-radius:6px;"></div>
+                    <h3 style="margin-top:12px; margin-bottom:8px; font-size:1.05em; color:var(--dark-text);">Prière</h3>
+                    <p style="margin:0; color:var(--muted);">Temps de prière personnelle et communautaire pour l'intercession, la guérison et l'élévation du cœur.</p>
+                </article>
+
+                <article class="activity-card" style="background: #fff; border-radius:8px; padding:12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align:left;">
+                    <div class="activity-thumb" style="background-image: url('img/WhatsApp Image 2026-01-01 at 21.44.50.jpeg'); background-size:cover; background-position:center; height:140px; border-radius:6px;"></div>
+                    <h3 style="margin-top:12px; margin-bottom:8px; font-size:1.05em; color:var(--dark-text);">Enseignement</h3>
+                    <p style="margin:0; color:var(--muted);">Enseignements bibliques et formations pratiques pour approfondir la foi et la vie spirituelle.</p>
+                </article>
+
+                <article class="activity-card" style="background: #fff; border-radius:8px; padding:12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align:left;">
+                    <div class="activity-thumb" style="background-image: url('img/WhatsApp Image 2026-01-03 at 17.00.29.jpeg'); background-size:cover; background-position:center; height:140px; border-radius:6px;"></div>
+                    <h3 style="margin-top:12px; margin-bottom:8px; font-size:1.05em; color:var(--dark-text);">Nuit de contemplation</h3>
+                    <p style="margin:0; color:var(--muted);">Veillée nocturne de méditation et d'adoration pour rencontrer Dieu dans le silence et la louange.</p>
+                </article>
+
+                <article class="activity-card" style="background: #fff; border-radius:8px; padding:12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align:left;">
+                    <div class="activity-thumb" style="background-image: url('img/WhatsApp Image 2026-01-01 at 21.37.17.jpeg'); background-size:cover; background-position:center; height:140px; border-radius:6px;"></div>
+                    <h3 style="margin-top:12px; margin-bottom:8px; font-size:1.05em; color:var(--dark-text);">Carrefour d'exaucement</h3>
+                    <p style="margin:0; color:var(--muted);">Espaces dédiés à la prière d'intercession et aux témoignages de délivrance et d'exaucement.</p>
+                </article>
+
+                <article class="activity-card" style="background: #fff; border-radius:8px; padding:12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align:left;">
+                    <div class="activity-thumb" style="background-image: url('img/WhatsApp Image 2026-01-01 at 21.39.53.jpeg'); background-size:cover; background-position:center; height:140px; border-radius:6px;"></div>
+                    <h3 style="margin-top:12px; margin-bottom:8px; font-size:1.05em; color:var(--dark-text);">Atelier d'autonomie</h3>
+                    <p style="margin:0; color:var(--muted);">Ateliers pratiques pour développer des compétences personnelles et spirituelles au quotidien.</p>
+                </article>
+
+                <article class="activity-card" style="background: #fff; border-radius:8px; padding:12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align:left;">
+                    <div class="activity-thumb" style="background-image: url('img/WhatsApp Image 2026-01-03 at 17.01.20.jpeg'); background-size:cover; background-position:center; height:140px; border-radius:6px;"></div>
+                    <h3 style="margin-top:12px; margin-bottom:8px; font-size:1.05em; color:var(--dark-text);">Atelier des adolescents</h3>
+                    <p style="margin:0; color:var(--muted);">Sessions adaptées aux adolescents: foi, identité, relations et autonomie dans un cadre bienveillant.</p>
+                </article>
             </div>
         </div>
     </section>
 
     <section class="new-sermons-section">
         <div class="container sermons-layout">
-            <div class="sermon-sidebar" style="background-image: url('<?php echo htmlspecialchars($sermonSidebarImage); ?>'); background-size: cover; background-position: center; border-radius:8px; min-height: 220px;"></div>
+            <div class="sermon-sidebar" style="background-image: url('img/WhatsApp Image 2026-01-01 at 21.39.35.jpeg'); background-size: cover; background-position: center; border-radius:8px; min-height: 220px;"></div>
             <div class="sermons-content">
-                <h2>ENSEIGNEMENTS & MÉDITATIONS</h2>
+                <h2>BIBLIOTHEQUE DES ENSEIGNEMENTS</h2>
                 <div class="sermon-list">
                     <article class="sermon-post">
-                        <div class="sermon-thumb" style="background-image: url('<?php echo htmlspecialchars($sermonImages[0]); ?>'); background-size: cover; background-position: center; min-height: 140px; border-radius: 8px;"></div>
+                        <div class="sermon-thumb" style="background-image: url('img/WhatsApp Image 2026-01-03 at 17.01.20 (1).jpeg'); background-size: cover; background-position: center; min-height: 140px; border-radius: 8px;"></div>
                         <p class="date">JUIN 25, 2025</p>
                         <h3>Retrouver le chemin avec Dieu</h3>
                         <p class="author">Équipe EDEN →</p>
@@ -184,7 +352,7 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
                     </article>
 
                     <article class="sermon-post">
-                        <div class="sermon-thumb" style="background-image: url('<?php echo htmlspecialchars($sermonImages[1]); ?>'); background-size: cover; background-position: center; min-height: 140px; border-radius: 8px;"></div>
+                        <div class="sermon-thumb" style="background-image: url('img/WhatsApp Image 2026-01-01 at 21.37.13 (1).jpeg'); background-size: cover; background-position: center; min-height: 140px; border-radius: 8px;"></div>
                         <p class="date">JUIN 18, 2025</p>
                         <h3>Adorer en esprit et en vérité</h3>
                         <p class="author">Ministère EDEN →</p>
@@ -192,7 +360,7 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
                     </article>
 
                     <article class="sermon-post">
-                        <div class="sermon-thumb" style="background-image: url('<?php echo htmlspecialchars($sermonImages[2]); ?>'); background-size: cover; background-position: center; min-height: 140px; border-radius: 8px;"></div>
+                        <div class="sermon-thumb" style="background-image: url('img/WhatsApp Image 2026-01-03 at 17.00.28.jpeg'); background-size: cover; background-position: center; min-height: 140px; border-radius: 8px;"></div>
                         <p class="date">JUIN 11, 2025</p>
                         <h3>Marcher avec Dieu après la retraite</h3>
                         <p class="author">Invités EDEN →</p>
@@ -200,7 +368,7 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
                     </article>
                 </div>
                 <div class="sermon-footer-links">
-                    <a href="public/programmes.php" class="btn btn-small-red">TOUS LES ENSEIGNEMENTS</a>
+                    <a href="public/enseignements.php" class="btn btn-small-red">TOUS LES ENSEIGNEMENTS</a>
                     <a href="public/programmes.php#themes" class="link">THÈMES</a>
                     <a href="public/programmes.php#series" class="link">SÉRIES</a>
                     <a href="public/programmes.php#livres" class="link">LIVRES</a>
@@ -213,24 +381,29 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
         <div class="container">
             <h2>Moments des retraites précédentes</h2>
             <div class="grid home-gallery-grid">
-            <?php if (empty($homePhotos)): ?>
+            <?php if (empty($galleryPhotos)): ?>
                 <p>Aucune photo enregistrée pour le moment. Revenez bientôt&nbsp;!</p>
             <?php else: ?>
-                <?php foreach ($homePhotos as $p): ?>
+                <?php foreach ($galleryPhotos as $p): ?>
                     <?php
-                    $link = !empty($p['retreat_id']) ? 'public/retraite.php?id=' . (int)$p['retreat_id'] : 'public/retraite.php';
-                    $src = $p['image_url'];
-                    if (strpos($src, '../') === 0) {
-                        $src = substr($src, 3);
-                    }
-                    ?>
-                    <div class="home-gallery-card" data-full="<?php echo htmlspecialchars($src); ?>" data-title="<?php echo htmlspecialchars($p['titre'] ?? ''); ?>" data-link="<?php echo htmlspecialchars($link); ?>">
+                $retreatId = $p['retreat_id'] ?? null;
+                $link = $retreatId ? 'public/retraite.php?id=' . (int)$retreatId : 'public/retraite.php';
+                $src = $p['image_url'] ?? '';
+                // Supprimer le préfixe '../' s'il existe
+                if (strpos($src, '../') === 0) {
+                    $src = substr($src, 3);
+                }
+                // Ajouter le préfixe 'uploads/' si nécessaire
+                if (!empty($src) && strpos($src, 'uploads/') !== 0) {
+                    $src = 'uploads/' . ltrim($src, '/');
+                }
+                $title = $p['titre'] ?? 'Photo de retraite';
+                ?>
+                    <div class="home-gallery-card" data-full="<?php echo htmlspecialchars($src); ?>" data-title="<?php echo htmlspecialchars($title); ?>" data-link="<?php echo htmlspecialchars($link); ?>">
                         <div class="home-gallery-thumb">
-                            <img src="<?php echo htmlspecialchars($src); ?>" alt="<?php echo htmlspecialchars($p['titre'] ?? ''); ?>" loading="lazy" decoding="async">
+                            <img src="<?php echo htmlspecialchars($src); ?>" alt="<?php echo htmlspecialchars($title); ?>" loading="lazy" decoding="async">
                         </div>
-                        <?php if (!empty($p['titre'])): ?>
-                            <div class="home-gallery-caption"><?php echo htmlspecialchars(substr($p['titre'], 0, 60)); ?></div>
-                        <?php endif; ?>
+                        <div class="home-gallery-caption"><?php echo htmlspecialchars(substr($title, 0, 60)); ?></div>
                     </div>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -240,6 +413,7 @@ if (!empty($homePhotos) && isset($homePhotos[3])) {
     </section>
 
     <!-- MODAL GALERIE ACCUEIL -->
+
     <div id="homeGalleryModal" class="home-gallery-modal" style="display:none;">
         <div class="home-gallery-modal-backdrop" onclick="edenCloseHomePhotoModal(event)"></div>
         <div class="home-gallery-modal-content">

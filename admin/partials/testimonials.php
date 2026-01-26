@@ -1,193 +1,332 @@
 <?php
-// Admin testimonials management (list, add, edit, delete)
-if (!isset($pdo)) require_once __DIR__ . '/../../config/db.php';
+// partials/testimonials.php
+require_once __DIR__ . '/../../config/db.php';
 
-$error = '';
-$message = '';
+$isAdding = isset($_GET['add']) && $_GET['add'] === 'new';
 
-// Optional success flag from redirect (delete action)
-if (!empty($_GET['testimonial_deleted'])) {
-    $message = 'Témoignage supprimé.';
-}
-
-// Handle add
-if (isset($_POST['add_testimonial'])) {
-    $author = trim($_POST['author'] ?? '');
-    $role = trim($_POST['role'] ?? '');
-    $content = trim($_POST['content'] ?? '');
-    $visible = isset($_POST['visible']) ? 1 : 0;
-    $image_url = null;
-
-    if ($author === '' || $content === '') {
-        $error = 'L\'auteur et le contenu sont requis.';
-    } else {
-        // handle upload
-        if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-            // store in the same /uploads directory as other admin uploads (root/uploads)
-            $uploadDir = realpath(__DIR__ . '/..' . DIRECTORY_SEPARATOR . '..') . DIRECTORY_SEPARATOR . 'uploads';
-
-            if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-            $orig = basename($_FILES['image_file']['name']);
-            $ext = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
-            $allowed = ['jpg','jpeg','png','gif','webp'];
-            if (in_array($ext, $allowed, true)) {
-                $newName = 'testi_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                $target = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-                if (move_uploaded_file($_FILES['image_file']['tmp_name'], $target)) {
-                    // try resize (resize_image exists in admin.php)
-                    if (function_exists('resize_image')) resize_image($target, $target, 800, 800, 85);
-                    // stocke un chemin relatif cohérent avec le reste de l'admin
-                    $image_url = '../uploads/' . $newName;
+// Gestion de la soumission du formulaire
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['add_testimonial'])) {
+        // Gestion de l'ajout d'un témoignage (depuis l'admin)
+        $author = trim($_POST['author']);
+        $content = trim($_POST['content']);
+        $location = trim($_POST['location'] ?? '');
+        $rating = (int)($_POST['rating'] ?? 5);
+        
+        // Gestion de l'upload de l'image
+        $imageUrl = null;
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $uploadDir = __DIR__ . '/../../uploads/testimonials/';
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+            
+            $fileExt = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
+            $allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+            
+            if (in_array($fileExt, $allowedExts)) {
+                $fileName = uniqid('testimonial_') . '.' . $fileExt;
+                $targetPath = $uploadDir . $fileName;
+                
+                if (move_uploaded_file($_FILES['image']['tmp_name'], $targetPath)) {
+                    $imageUrl = '/uploads/testimonials/' . $fileName;
                 }
             }
         }
-
-        $stmt = $pdo->prepare('INSERT INTO testimonials (author, role, content, image_url, visible, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
-        $stmt->execute([$author, $role !== '' ? $role : null, $content, $image_url, $visible]);
-        $message = 'Témoignage ajouté.';
+        
+        // Insertion en base de données
+        $stmt = $pdo->prepare('INSERT INTO testimonials (author, content, location, rating, image_url, is_approved, created_at) VALUES (?, ?, ?, ?, ?, 1, NOW())');
+        $stmt->execute([$author, $content, $location, $rating, $imageUrl]);
+        
+        header('Location: ?section=testimonials&success=added');
+        exit;
+    } 
+    // Gestion de l'approbation/rejet des témoignages
+    elseif (isset($_POST['approve_testimonial'])) {
+        $id = (int)$_POST['testimonial_id'];
+        $stmt = $pdo->prepare('UPDATE testimonials SET is_approved = 1, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$id]);
+        
+        header('Location: ?section=testimonials&success=approved');
+        exit;
     }
-}
-
-// Handle update
-if (isset($_POST['update_testimonial'])) {
-    $id = (int)($_POST['id'] ?? 0);
-    $author = trim($_POST['author'] ?? '');
-    $role = trim($_POST['role'] ?? '');
-    $content = trim($_POST['content'] ?? '');
-    $visible = isset($_POST['visible']) ? 1 : 0;
-
-    if ($id <= 0 || $author === '' || $content === '') {
-        $error = 'Données invalides.';
-    } else {
-        // get current image
-        $img = $pdo->prepare('SELECT image_url FROM testimonials WHERE id = ?');
-        $img->execute([$id]);
-        $cur = $img->fetch(PDO::FETCH_ASSOC);
-        $image_url = $cur['image_url'] ?? null;
-
-        // handle new upload
-        if (!empty($_FILES['image_file']['name']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
-            // store in the same /uploads directory as other admin uploads (root/uploads)
-            $uploadDir = realpath(__DIR__ . '/..' . DIRECTORY_SEPARATOR . '..') . DIRECTORY_SEPARATOR . 'uploads';
-
-            if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-            $orig = basename($_FILES['image_file']['name']);
-            $ext = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
-            $allowed = ['jpg','jpeg','png','gif','webp'];
-            if (in_array($ext, $allowed, true)) {
-                $newName = 'testi_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
-                $target = $uploadDir . DIRECTORY_SEPARATOR . $newName;
-                if (move_uploaded_file($_FILES['image_file']['tmp_name'], $target)) {
-                    if (function_exists('resize_image')) resize_image($target, $target, 800, 800, 85);
-                    $image_url = '../uploads/' . $newName;
-                }
+    elseif (isset($_POST['delete_testimonial'])) {
+        $id = (int)$_POST['testimonial_id'];
+        
+        // Récupérer l'URL de l'image pour la supprimer
+        $stmt = $pdo->prepare('SELECT image_url FROM testimonials WHERE id = ?');
+        $stmt->execute([$id]);
+        $testimonial = $stmt->fetch();
+        
+        if ($testimonial && !empty($testimonial['image_url'])) {
+            $imagePath = __DIR__ . '/../..' . $testimonial['image_url'];
+            if (file_exists($imagePath)) {
+                @unlink($imagePath);
             }
         }
-
-        $stmt = $pdo->prepare('UPDATE testimonials SET author = ?, role = ?, content = ?, image_url = ?, visible = ?, updated_at = NOW() WHERE id = ?');
-        $stmt->execute([$author, $role !== '' ? $role : null, $content, $image_url, $visible, $id]);
-        $message = 'Témoignage mis à jour.';
-    }
-}
-
-// Handle delete
-if (isset($_GET['delete_testimonial'])) {
-    $id = (int) $_GET['delete_testimonial'];
-    if ($id > 0) {
-        $pdo->prepare('DELETE FROM testimonials WHERE id = ?')->execute([$id]);
-        header('Location: admin.php?section=testimonials&testimonial_deleted=1');
+        
+        $stmt = $pdo->prepare('DELETE FROM testimonials WHERE id = ?');
+        $stmt->execute([$id]);
+        
+        header('Location: ?section=testimonials&success=deleted');
         exit;
     }
 }
 
-$testimonials = $pdo->query('SELECT * FROM testimonials ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
+// Récupération des témoignages
+$pendingTestimonials = $pdo->query('SELECT * FROM testimonials WHERE is_approved = 0 ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
+$approvedTestimonials = $pdo->query('SELECT * FROM testimonials WHERE is_approved = 1 ORDER BY created_at DESC')->fetchAll(PDO::FETCH_ASSOC);
 
+// Gestion des messages de succès
+$successMessage = '';
+if (isset($_GET['success'])) {
+    switch ($_GET['success']) {
+        case 'added':
+            $successMessage = 'Le témoignage a été ajouté avec succès.';
+            break;
+        case 'approved':
+            $successMessage = 'Le témoignage a été approuvé avec succès.';
+            break;
+        case 'deleted':
+            $successMessage = 'Le témoignage a été supprimé avec succès.';
+            break;
+    }
+}
 ?>
+
+<?php if ($isAdding): ?>
+<!-- Formulaire d'ajout de témoignage -->
 <div class="admin-section">
-    <h2>Gérer les Témoignages</h2>
-    <?php if ($error !== ''): ?>
-        <div class="admin-alert admin-alert-error"><?php echo htmlspecialchars($error); ?></div>
-    <?php endif; ?>
-    <?php if ($message !== ''): ?>
-        <div class="admin-alert admin-alert-success"><?php echo htmlspecialchars($message); ?></div>
-    <?php endif; ?>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+        <h2 style="margin: 0;">Ajouter un Témoignage</h2>
+        <a href="?section=testimonials" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;">
+            <span>←</span>
+            Retour
+        </a>
+    </div>
 
-    <div style="display:flex; gap:24px; align-items:flex-start;">
-        <div style="flex:1; max-width:480px;">
-            <h3>Ajouter un témoignage</h3>
-            <form method="post" enctype="multipart/form-data">
-                <div style="margin-bottom:8px;"><label>Auteur</label><input type="text" name="author" required style="width:100%; padding:8px;"></div>
-                <div style="margin-bottom:8px;"><label>Rôle / Ville (optionnel)</label><input type="text" name="role" style="width:100%; padding:8px;"></div>
-                <div style="margin-bottom:8px;"><label>Contenu</label><textarea name="content" rows="5" required style="width:100%; padding:8px;"></textarea></div>
-                <div style="margin-bottom:8px;"><label>Photo (optionnel)</label><input type="file" name="image_file" accept="image/*"></div>
-                <div style="margin-bottom:8px;"><label><input type="checkbox" name="visible" checked> Visible publiquement</label></div>
-                <div><button type="submit" name="add_testimonial" class="btn btn-primary">Ajouter</button></div>
-            </form>
+    <?php if (!empty($testimonialError)): ?>
+        <div class="admin-alert admin-alert-error">
+            <span>⚠️</span>
+            <?php echo htmlspecialchars($testimonialError); ?>
         </div>
+    <?php endif; ?>
 
-        <div style="flex:2;">
-            <h3>Liste des témoignages</h3>
-            <?php
-                $testiPerPage = 15;
-                $testiPage = isset($_GET['testi_page']) && is_numeric($_GET['testi_page']) ? max(1, (int)$_GET['testi_page']) : 1;
-                $testiTotal = count($testimonials);
-                $testiOffset = ($testiPage - 1) * $testiPerPage;
-                $testiPageItems = array_slice($testimonials, $testiOffset, $testiPerPage);
-                $testiHasPrev = $testiPage > 1;
-                $testiHasNext = $testiOffset + $testiPerPage < $testiTotal;
-            ?>
-
-            <?php if (empty($testiPageItems)): ?>
-                <p>Aucun témoignage pour le moment.</p>
-            <?php else: ?>
-                <table style="width:100%; border-collapse:collapse;">
-                    <thead>
-                        <tr style="text-align:left; border-bottom:1px solid #eee;"><th>Auteur</th><th>Contenu</th><th>Visible</th><th>Actions</th></tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($testiPageItems as $t): ?>
-                        <tr style="border-bottom:1px solid #f4f4f4;">
-                            <td style="padding:8px; vertical-align:top;"><?php echo htmlspecialchars($t['author']); ?><br><small><?php echo htmlspecialchars($t['role'] ?? ''); ?></small></td>
-                            <td style="padding:8px; vertical-align:top; max-width:480px;"><?php echo nl2br(htmlspecialchars(substr($t['content'],0,280))); ?><?php echo (strlen($t['content'])>280)?'...':''; ?></td>
-                            <td style="padding:8px; vertical-align:top;"><?php echo $t['visible'] ? 'Oui' : 'Non'; ?></td>
-                            <td style="padding:8px; vertical-align:top;">
-                                <a href="#edit_<?php echo (int)$t['id']; ?>" onclick="document.getElementById('edit_<?php echo (int)$t['id']; ?>').style.display='block'; return false;" class="btn btn-sm">Éditer</a>
-                                <a href="?section=testimonials&delete_testimonial=<?php echo (int)$t['id']; ?>" onclick="return confirm('Supprimer ce témoignage ?')" class="btn btn-sm btn-danger">Supprimer</a>
-                                <?php if (!empty($t['image_url'])): ?><div style="margin-top:6px;"><img src="<?php echo htmlspecialchars($t['image_url']); ?>" alt="" style="max-width:120px; border-radius:6px;"></div><?php endif; ?>
-                                <div id="edit_<?php echo (int)$t['id']; ?>" style="display:none; margin-top:12px; background:#fff; padding:12px; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-                                    <form method="post" enctype="multipart/form-data">
-                                        <input type="hidden" name="id" value="<?php echo (int)$t['id']; ?>">
-                                        <div style="margin-bottom:8px;"><label>Auteur</label><input type="text" name="author" required value="<?php echo htmlspecialchars($t['author']); ?>" style="width:100%; padding:8px;"></div>
-                                        <div style="margin-bottom:8px;"><label>Rôle</label><input type="text" name="role" value="<?php echo htmlspecialchars($t['role'] ?? ''); ?>" style="width:100%; padding:8px;"></div>
-                                        <div style="margin-bottom:8px;"><label>Contenu</label><textarea name="content" rows="4" required style="width:100%; padding:8px;"><?php echo htmlspecialchars($t['content']); ?></textarea></div>
-                                        <div style="margin-bottom:8px;"><label>Nouvelle photo (laisser vide pour conserver)</label><input type="file" name="image_file" accept="image/*"></div>
-                                        <div style="margin-bottom:8px;"><label><input type="checkbox" name="visible" <?php echo $t['visible'] ? 'checked' : ''; ?>> Visible publiquement</label></div>
-                                        <div><button type="submit" name="update_testimonial" class="btn btn-primary">Enregistrer</button></div>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-
-                <?php if ($testiTotal > $testiPerPage): ?>
-                    <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center; font-size:0.9rem;">
-                        <div>
-                            Page <?php echo $testiPage; ?> / <?php echo max(1, (int)ceil($testiTotal / $testiPerPage)); ?>
-                        </div>
-                        <div style="display:flex; gap:8px;">
-                            <?php if ($testiHasPrev): ?>
-                                <a href="?section=testimonials&amp;testi_page=<?php echo $testiPage - 1; ?>" class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;">&laquo; Précédent</a>
-                            <?php endif; ?>
-                            <?php if ($testiHasNext): ?>
-                                <a href="?section=testimonials&amp;testi_page=<?php echo $testiPage + 1; ?>" class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;">Suivant &raquo;</a>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
-
+    <div class="admin-section">
+        <form method="post" enctype="multipart/form-data" class="form-modern">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="testimonial_author">Auteur *</label>
+                    <input type="text" id="testimonial_author" name="author" required 
+                           placeholder="Ex: Marie D.">
+                </div>
+                
+                <div class="form-group">
+                    <label for="testimonial_location">Localisation</label>
+                    <input type="text" id="testimonial_location" name="location" 
+                           placeholder="Ex: Paris, France">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="testimonial_content">Témoignage *</label>
+                <textarea id="testimonial_content" name="content" rows="4" required 
+                          placeholder="Partagez votre expérience..."></textarea>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="testimonial_rating">Note</label>
+                    <select id="testimonial_rating" name="rating" 
+                            style="padding: 12px; border: 2px solid var(--color-border); border-radius: 8px; width: 100%;">
+                        <option value="5">⭐⭐⭐⭐⭐ (5/5)</option>
+                        <option value="4">⭐⭐⭐⭐ (4/5)</option>
+                        <option value="3">⭐⭐⭐ (3/5)</option>
+                        <option value="2">⭐⭐ (2/5)</option>
+                        <option value="1">⭐ (1/5)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="testimonial_image">Photo de l'auteur</label>
+                    <input type="file" id="testimonial_image" name="image" accept="image/*">
+                    <small style="color: var(--color-text-light); display: block; margin-top: 5px;">
+                        Formats: JPG, PNG, WEBP (max 1Mo)
+                    </small>
+                </div>
+            </div>
+            
+            <div style="margin-top: 25px; display: flex; gap: 15px;">
+                <button type="submit" name="add_testimonial" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px;">
+                    <span>💾</span>
+                    Ajouter le témoignage
+                </button>
+                <a href="?section=testimonials" class="btn btn-outline">Annuler</a>
+            </div>
+        </form>
     </div>
 </div>
+
+<?php else: ?>
+<!-- Liste des témoignages -->
+<div class="admin-section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+        <h2 style="margin: 0;">Gestion des Témoignages</h2>
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <a href="?section=testimonials&add=new" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px;">
+                <span>➕</span>
+                Nouveau Témoignage
+            </a>
+        </div>
+    </div>
+
+    <?php if (isset($_GET['testimonial_success'])): ?>
+        <div class="admin-alert admin-alert-success">
+            <span>✅</span>
+            Témoignage ajouté avec succès !
+        </div>
+    <?php endif; ?>
+
+    <?php if ($successMessage): ?>
+        <div class="admin-alert admin-alert-success" style="margin-bottom: 20px;">
+            <span>✅</span>
+            <?php echo htmlspecialchars($successMessage); ?>
+        </div>
+    <?php endif; ?>
+
+    <div class="dashboard-grid">
+        <div class="admin-section">
+            <h3>Témoignages en attente (<?php echo count($pendingTestimonials); ?>)</h3>
+            
+            <?php if (empty($pendingTestimonials)): ?>
+                <div class="empty-state" style="padding: 40px 20px;">
+                    <i>💬</i>
+                    <h3 style="font-size: 1.1rem;">Aucun témoignage en attente</h3>
+                    <p style="font-size: 0.9rem;">Les nouveaux témoignages apparaîtront ici pour modération.</p>
+                </div>
+            <?php else: ?>
+                <div class="testimonials-list" style="margin-top: 20px;">
+                    <?php foreach ($pendingTestimonials as $testimonial): ?>
+                        <div class="testimonial-item" style="background: #fff; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+                                <?php if (!empty($testimonial['image_url'])): 
+                                    $imagePath = $testimonial['image_url'];
+                                    // Si le chemin commence par /uploads, on ajoute .. pour remonter d'un niveau
+                                    if (strpos($imagePath, '/uploads/') === 0) {
+                                        $imagePath = '..' . $imagePath;
+                                    }
+                                    // Si le chemin ne commence pas par /, on ajoute /admin/../
+                                    elseif (strpos($imagePath, '/') !== 0) {
+                                        $imagePath = '../' . $imagePath;
+                                    }
+                                ?>
+                                    <img src="<?php echo htmlspecialchars($imagePath); ?>" 
+                                         alt="<?php echo htmlspecialchars($testimonial['author']); ?>" 
+                                         style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
+                                <?php endif; ?>
+                                <div>
+                                    <h4 style="margin: 0 0 5px 0;"><?php echo htmlspecialchars($testimonial['author']); ?></h4>
+                                    <?php if (!empty($testimonial['location'])): ?>
+                                        <p style="margin: 0; color: #666; font-size: 0.9em;"><?php echo htmlspecialchars($testimonial['location']); ?></p>
+                                    <?php endif; ?>
+                                    <?php if (isset($testimonial['rating'])): ?>
+                                        <div style="color: #ffc107; font-size: 1.1em; margin-top: 3px;">
+                                            <?php 
+                                            $rating = (int)$testimonial['rating'];
+                                            echo str_repeat('★', $rating) . str_repeat('☆', 5 - $rating);
+                                            ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <p style="margin: 10px 0 15px; line-height: 1.5;"><?php echo nl2br(htmlspecialchars($testimonial['content'])); ?></p>
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <form method="post" style="display: inline;">
+                                    <input type="hidden" name="testimonial_id" value="<?php echo $testimonial['id']; ?>">
+                                    <button type="submit" name="approve_testimonial" class="btn btn-success" style="padding: 5px 10px; font-size: 0.9em;">
+                                        <span>✓</span> Approuver
+                                    </button>
+                                </form>
+                                <form method="post" style="display: inline;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer ce témoignage ? Cette action est irréversible.');">
+                                    <input type="hidden" name="testimonial_id" value="<?php echo $testimonial['id']; ?>">
+                                    <button type="submit" name="delete_testimonial" class="btn btn-danger" style="padding: 5px 10px; font-size: 0.9em;">
+                                        <span>✕</span> Supprimer
+                                    </button>
+                                </form>
+                            </div>
+                            <div style="font-size: 0.8em; color: #888; margin-top: 10px;">
+                                Posté le <?php echo date('d/m/Y à H:i', strtotime($testimonial['created_at'])); ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <div class="admin-section">
+            <h3>Témoignages approuvés (<?php echo count($approvedTestimonials); ?>)</h3>
+            
+            <?php if (empty($approvedTestimonials)): ?>
+                <div class="empty-state" style="padding: 40px 20px;">
+                    <i>⭐</i>
+                    <h3 style="font-size: 1.1rem;">Aucun témoignage approuvé</h3>
+                    <p style="font-size: 0.9rem;">Approuvez des témoignages pour les afficher sur le site.</p>
+                </div>
+            <?php else: ?>
+                <div class="testimonials-list" style="margin-top: 20px;">
+                    <?php foreach ($approvedTestimonials as $testimonial): ?>
+                        <div class="testimonial-item" style="background: #fff; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+                                <?php if (!empty($testimonial['image_url'])): 
+                                    $imagePath = $testimonial['image_url'];
+                                    // Si le chemin commence par /uploads, on ajoute .. pour remonter d'un niveau
+                                    if (strpos($imagePath, '/uploads/') === 0) {
+                                        $imagePath = '..' . $imagePath;
+                                    }
+                                    // Si le chemin ne commence pas par /, on ajoute /admin/../
+                                    elseif (strpos($imagePath, '/') !== 0) {
+                                        $imagePath = '../' . $imagePath;
+                                    }
+                                ?>
+                                    <img src="<?php echo htmlspecialchars($imagePath); ?>" 
+                                         alt="<?php echo htmlspecialchars($testimonial['author']); ?>" 
+                                         style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
+                                <?php endif; ?>
+                                <div>
+                                    <h4 style="margin: 0 0 5px 0;"><?php echo htmlspecialchars($testimonial['author']); ?></h4>
+                                    <?php if (!empty($testimonial['location'])): ?>
+                                        <p style="margin: 0; color: #666; font-size: 0.9em;"><?php echo htmlspecialchars($testimonial['location']); ?></p>
+                                    <?php endif; ?>
+                                    <?php if (isset($testimonial['rating'])): ?>
+                                        <div style="color: #ffc107; font-size: 1.1em; margin-top: 3px;">
+                                            <?php 
+                                            $rating = (int)$testimonial['rating'];
+                                            echo str_repeat('★', $rating) . str_repeat('☆', 5 - $rating);
+                                            ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <p style="margin: 10px 0 15px; line-height: 1.5;"><?php echo nl2br(htmlspecialchars($testimonial['content'])); ?></p>
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <form method="post" style="display: inline;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer ce témoignage ? Cette action est irréversible.');">
+                                    <input type="hidden" name="testimonial_id" value="<?php echo $testimonial['id']; ?>">
+                                    <button type="submit" name="delete_testimonial" class="btn btn-danger" style="padding: 5px 10px; font-size: 0.9em;">
+                                        <span>✕</span> Supprimer
+                                    </button>
+                                </form>
+                            </div>
+                            <div style="font-size: 0.8em; color: #888; margin-top: 10px;">
+                                Posté le <?php echo date('d/m/Y à H:i', strtotime($testimonial['created_at'])); ?>
+                                <?php if ($testimonial['updated_at'] && $testimonial['updated_at'] !== $testimonial['created_at']): ?>
+                                    <br>Approuvé le <?php echo date('d/m/Y à H:i', strtotime($testimonial['updated_at'])); ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+<?php endif; ?>

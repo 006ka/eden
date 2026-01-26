@@ -1,62 +1,141 @@
-<div class="admin-section" id="contacts">
-    <h2>Messages de contact <span class="badge"><?php echo count($contacts); ?></span></h2>
+<div class="admin-section">
+    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+        <h2 style="margin: 0;">Gestion des Contacts</h2>
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <span style="color: var(--color-text-light); font-size: 0.9rem;">
+                Total: <?php echo count($contacts); ?> contact(s)
+            </span>
+        </div>
+    </div>
 
-    <?php
-        $contactsPerPage = 15;
-        $contactPage = isset($_GET['contact_page']) && is_numeric($_GET['contact_page']) ? max(1, (int)$_GET['contact_page']) : 1;
-        $contactsTotal = count($contacts);
-        $contactOffset = ($contactPage - 1) * $contactsPerPage;
-        $contactsPageItems = array_slice($contacts, $contactOffset, $contactsPerPage);
-        $contactHasPrev = $contactPage > 1;
-        $contactHasNext = $contactOffset + $contactsPerPage < $contactsTotal;
-    ?>
+    <?php if (isset($_GET['delete_contact'])): ?>
+        <div class="admin-alert admin-alert-success">
+            <span>✅</span>
+            Contact supprimé avec succès !
+        </div>
+    <?php endif; ?>
 
-    <?php if (empty($contactsPageItems)): ?>
-        <p>Aucun message.</p>
-    <?php else: ?>
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Nom</th>
-                    <th>Email</th>
-                    <th>Téléphone</th>
-                    <th>Message</th>
-                    <th>Date</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($contactsPageItems as $c): ?>
+    <?php if (!empty($contacts)): ?>
+        <div class="table-responsive">
+            <table>
+                <thead>
                     <tr>
-                        <td><?php echo (int)$c['id']; ?></td>
-                        <td><?php echo htmlspecialchars($c['nom']); ?></td>
-                        <td><?php echo htmlspecialchars($c['email']); ?></td>
-                        <td><?php echo htmlspecialchars($c['telephone']); ?></td>
-                        <td><?php echo nl2br(htmlspecialchars($c['message'])); ?></td>
-                        <td><?php echo htmlspecialchars($c['created_at']); ?></td>
-                        <td class="actions">
-                            <a href="?delete_contact=<?php echo (int)$c['id']; ?>" onclick="return confirm('Supprimer ce message ?');">Supprimer</a>
-                        </td>
+                        <th>Nom</th>
+                        <th>Email</th>
+                        <th>Téléphone</th>
+                        <th>Sujet</th>
+                        <th>Date</th>
+                        <th>Actions</th>
                     </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <?php if ($contactsTotal > $contactsPerPage): ?>
-            <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center; font-size:0.9rem;">
-                <div>
-                    Page <?php echo $contactPage; ?> / <?php echo max(1, (int)ceil($contactsTotal / $contactsPerPage)); ?>
-                </div>
-                <div style="display:flex; gap:8px;">
-                    <?php if ($contactHasPrev): ?>
-                        <a href="?section=contacts&amp;contact_page=<?php echo $contactPage - 1; ?>" class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;">&laquo; Précédent</a>
-                    <?php endif; ?>
-                    <?php if ($contactHasNext): ?>
-                        <a href="?section=contacts&amp;contact_page=<?php echo $contactPage + 1; ?>" class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;">Suivant &raquo;</a>
-                    <?php endif; ?>
-                </div>
-            </div>
-        <?php endif; ?>
+                </thead>
+                <tbody>
+                    <?php foreach ($contacts as $contact): ?>
+                        <tr>
+                            <td>
+                                <div style="font-weight: 600;">
+                                    <?php 
+                                    // Afficher le nom de famille
+                                    echo htmlspecialchars($contact['nom'] ?? ''); 
+                                    
+                                    // Afficher le prénom s'il existe dans le tableau
+                                    if (isset($contact['prenom']) && !empty($contact['prenom'])): 
+                                    ?>
+                                        <div style="color: var(--color-text-light); font-size: 0.9rem;">
+                                            <?php echo htmlspecialchars($contact['prenom']); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
+                            <td>
+                                <a href="mailto:<?php echo htmlspecialchars($contact['email']); ?>" 
+                                   style="color: var(--admin-accent); text-decoration: none;">
+                                    <?php echo htmlspecialchars($contact['email']); ?>
+                                </a>
+                            </td>
+                            <td>
+                                <?php if ($contact['telephone']): ?>
+                                    <a href="tel:<?php echo htmlspecialchars($contact['telephone']); ?>" 
+                                       style="color: var(--color-text); text-decoration: none;">
+                                        <?php echo htmlspecialchars($contact['telephone']); ?>
+                                    </a>
+                                <?php else: ?>
+                                    <span style="color: var(--color-text-light);">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if (isset($contact['sujet']) && !empty(trim($contact['sujet']))): ?>
+                                    <span style="font-weight: 600; color: var(--admin-accent);">
+                                        <?php echo htmlspecialchars($contact['sujet']); ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span style="color: var(--color-text-light); font-style: italic;">Aucun sujet</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php 
+                                $date = new DateTime($contact['created_at']);
+                                echo $date->format('d/m/Y à H:i');
+                                ?>
+                            </td>
+                            <td class="actions">
+                                <a href="#" onclick="showMessage('<?php echo htmlspecialchars($contact['message'], ENT_QUOTES, 'UTF-8'); ?>'); return false;">
+                                    <span>📝</span>
+                                    Message
+                                </a>
+                                <a href="mailto:<?php echo htmlspecialchars($contact['email']); ?>">
+                                    <span>📧</span>
+                                    Répondre
+                                </a>\n                                <a href="?section=contacts&delete_contact=<?php echo $contact['id']; ?>" 
+                                   onclick="return confirm('Êtes-vous sûr de vouloir supprimer ce contact ?')"
+                                   style="color: var(--color-accent);">
+                                    <span>🗑️</span>
+                                    Supprimer
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php else: ?>
+        <div class="empty-state">
+            <i>📞</i>
+            <h3>Aucun contact</h3>
+            <p>Les messages de vos visiteurs apparaîtront ici.</p>
+        </div>
     <?php endif; ?>
 </div>
+
+<script>
+function showMessage(message) {
+    const modal = document.createElement('div');
+    modal.id = 'messageModal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;';
+    
+    const content = document.createElement('div');
+    content.style.cssText = 'background: white; padding: 30px; border-radius: 8px; max-width: 700px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);';
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.style.cssText = 'margin: 0 0 20px 0; color: #333; line-height: 1.6; font-family: monospace; background: #f5f5f5; padding: 15px; border-radius: 6px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;';
+    messageDiv.textContent = message;
+    
+    const title = document.createElement('h3');
+    title.style.cssText = 'margin-top: 0; margin-bottom: 15px;';
+    title.textContent = 'Message du Contact';
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.onclick = function() { modal.remove(); };
+    closeBtn.style.cssText = 'background: #2c5aa0; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;';
+    closeBtn.textContent = 'Fermer';
+    
+    content.appendChild(title);
+    content.appendChild(messageDiv);
+    content.appendChild(closeBtn);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+    
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) modal.remove();
+    });
+}
+</script>

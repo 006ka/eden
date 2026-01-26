@@ -18,9 +18,9 @@ function is_active($href) {
             <ul>
                 <li><a href="<?php echo $base; ?>index.php" class="<?php echo is_active($base . 'index.php') ? 'active' : ''; ?>">Accueil</a></li>
                 <li><a href="<?php echo $base; ?>public/apropos.php" class="<?php echo is_active($base . 'public/apropos.php') ? 'active' : ''; ?>">À propos</a></li>
-                <li><a href="<?php echo $base; ?>public/programmes.php" class="<?php echo is_active($base . 'public/programmes.php') ? 'active' : ''; ?>">Programmes</a></li>
-                <li><a href="<?php echo $base; ?>public/retraite.php" class="<?php echo is_active($base . 'public/retraite.php') ? 'active' : ''; ?>">Retraites</a></li>
+                <li><a href="<?php echo $base; ?>public/retraite.php" class="<?php echo is_active($base . 'public/retraite.php') ? 'active' : ''; ?>">Programmes</a></li>
                 <li><a href="<?php echo $base; ?>public/horaire.php" class="<?php echo is_active($base . 'public/horaire.php') ? 'active' : ''; ?>">Horaires</a></li>
+                <li><a href="<?php echo $base; ?>public/enseignements.php" class="<?php echo is_active($base . 'public/enseignements.php') ? 'active' : ''; ?>">Enseignements</a></li>
                 <li><a href="<?php echo $base; ?>public/galerie.php" class="<?php echo is_active($base . 'public/galerie.php') ? 'active' : ''; ?>">Galerie</a></li>
                 <li><a href="<?php echo $base; ?>public/temoignages.php" class="<?php echo is_active($base . 'public/temoignages.php') ? 'active' : ''; ?>">Témoignages</a></li>
                 <li><a href="<?php echo $base; ?>public/contact.php" class="<?php echo is_active($base . 'public/contact.php') ? 'active' : ''; ?>">Contact</a></li>

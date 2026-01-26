@@ -2,6 +2,334 @@
    EDEN MINISTÈRE - PROFESSIONAL CSS FRAMEWORK
    ============================================ */
 
+/* Styles pour la page des enseignements */
+.enseignements-page {
+    padding: 4rem 0;
+}
+
+/* Filtres et recherche */
+.enseignements-filters {
+    background: var(--color-surface);
+    padding: 1.5rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.enseignements-filters .form-control {
+    border-radius: 50px;
+    padding: 0.75rem 1.25rem;
+    border: 1px solid var(--color-border);
+}
+
+.enseignements-filters .form-select {
+    border-radius: 50px;
+    padding: 0.75rem 1.25rem;
+    border: 1px solid var(--color-border);
+    cursor: pointer;
+}
+
+/* Grille des enseignements */
+.enseignements-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+}
+
+/* Carte d'enseignement */
+.enseignement-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--color-border);
+}
+
+.enseignement-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.enseignement-card-img {
+    height: 200px;
+    object-fit: cover;
+    width: 100%;
+}
+
+.enseignement-card-body {
+    padding: 1.5rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.enseignement-card-title {
+    font-size: 1.25rem;
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: 0.5rem;
+    color: var(--color-primary);
+}
+
+.enseignement-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    color: var(--color-text-light);
+}
+
+.enseignement-card-meta i {
+    margin-right: 0.25rem;
+    color: var(--color-secondary);
+}
+
+.enseignement-card-text {
+    color: var(--color-text);
+    margin-bottom: 1.5rem;
+    flex-grow: 1;
+}
+
+.enseignement-card-footer {
+    padding: 1rem 1.5rem;
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-border);
+}
+
+/* Badges de catégorie */
+.badge-category {
+    display: inline-block;
+    padding: 0.35em 0.65em;
+    font-size: 0.75em;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: 50rem;
+    background-color: var(--color-primary-light);
+    color: white;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+    gap: 0.5rem;
+}
+
+.page-item {
+    margin: 0 0.25rem;
+}
+
+.page-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50% !important;
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-weight: var(--font-weight-medium);
+    transition: all 0.2s ease;
+}
+
+.page-link:hover {
+    background-color: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.page-item.active .page-link {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
+}
+
+/* Détail d'un enseignement */
+.enseignement-header {
+    margin-bottom: 2.5rem;
+}
+
+.enseignement-title {
+    font-size: 2.25rem;
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+}
+
+.enseignement-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+    color: var(--color-text-light);
+    font-size: 0.9375rem;
+}
+
+.enseignement-content {
+    line-height: 1.8;
+    color: var(--color-text);
+}
+
+.enseignement-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+    margin: 1.5rem 0;
+}
+
+.enseignement-content p,
+.enseignement-content ul,
+.enseignement-content ol {
+    margin-bottom: 1.5rem;
+}
+
+.enseignement-content h2,
+.enseignement-content h3,
+.enseignement-content h4 {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    color: var(--color-primary);
+}
+
+/* ===== Améliorations stylistiques pour la page 'Enseignement' ===== */
+.blog-post {
+    background: transparent;
+}
+
+.blog-post header img.img-fluid {
+    width: 100%;
+    max-height: 480px;
+    object-fit: cover;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+}
+
+.display-5 {
+    font-size: 2rem;
+    line-height: 1.15;
+    color: var(--color-primary);
+}
+
+.breadcrumb {
+    background: transparent;
+    padding: 0;
+    margin-bottom: 1rem;
+}
+.breadcrumb .breadcrumb-item a { color: var(--color-primary); }
+
+.lead {
+    font-size: 1.05rem;
+    color: var(--color-text);
+}
+
+.blog-content {
+    font-size: 1rem;
+    line-height: 1.9;
+    color: var(--color-text);
+}
+
+.social-share a.btn,
+.social-share button.btn {
+    margin-left: 0.35rem;
+    border-radius: 6px;
+}
+
+#copy-message {
+    transition: opacity 200ms ease-in-out, transform 200ms ease-in-out;
+}
+
+/* Similar items: cards spacing and consistent button look */
+.row-cols-1.row-cols-md-3 .card {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: transform 180ms ease;
+}
+.row-cols-1.row-cols-md-3 .card:hover { transform: translateY(-6px); }
+
+/* Responsive tweak: ensure content padding on small screens */
+@media (max-width: 768px) {
+    .display-5 { font-size: 1.5rem; }
+    .blog-post header img.img-fluid { max-height: 320px; }
+}
+
+/* Fin des améliorations pour la page enseignement */
+
+/* Sidebar des enseignements similaires */
+.similar-enseignements {
+    background: var(--color-bg);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-top: 3rem;
+}
+
+.similar-enseignements h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.similar-enseignement-item {
+    display: flex;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.similar-enseignement-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.similar-enseignement-img {
+    width: 80px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    margin-right: 1rem;
+}
+
+.similar-enseignement-title {
+    font-size: 0.9375rem;
+    font-weight: var(--font-weight-medium);
+    margin-bottom: 0.25rem;
+}
+
+.similar-enseignement-meta {
+    font-size: 0.8125rem;
+    color: var(--color-text-light);
+}
+
+/* Version mobile */
+@media (max-width: 768px) {
+    .enseignements-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .enseignement-title {
+        font-size: 1.75rem;
+    }
+    
+    .enseignements-filters {
+        padding: 1rem;
+    }
+    
+    .enseignements-filters .row > div {
+        margin-bottom: 1rem;
+    }
+}
+
 /* 1. ROOT VARIABLES & THEME */
 :root {
     /* Colors */
@@ -312,6 +640,31 @@ code {
 
 .site-nav a.active {
     color: var(--color-primary);
+    position: relative;
+    font-weight: var(--font-weight-bold);
+}
+
+.site-nav a.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background-color: var(--color-primary);
+    border-radius: 3px 3px 0 0;
+}
+
+/* Animation de soulignement au survol */
+.site-nav a:not(.active):hover::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: var(--color-primary-light);
+    transform: none;
 }
 
 .nav-toggle {
@@ -549,15 +902,28 @@ code {
 
 /* 10. SECONDARY BLOCKS */
 .secondary-blocks {
-    padding: var(--space-3xl) 0;
-    background: var(--color-bg);
+    padding: 5rem 0;
+    background-color: var(--color-bg);
+    position: relative;
+    overflow: hidden;
+}
+
+.secondary-blocks::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,0,0,0.1), transparent);
 }
 
 .block-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: var(--space-xl);
-    margin-top: var(--space-2xl);
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+    perspective: 1000px;
 }
 
 .block {
@@ -580,31 +946,372 @@ code {
     position: absolute;
     top: 0;
     left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0);
-    transition: all var(--transition-base);
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .block:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-xl);
+    transform: translateY(-5px) scale(1.02);
+    box-shadow: 0 12px 20px rgba(0, 0, 0, 0.1);
+    z-index: 1;
 }
 
 .block:hover::before {
-    background: rgba(255, 255, 255, 0.1);
+    transform: scaleX(1);
 }
 
-.block h3 {
-    font-size: var(--font-size-xl);
-    margin-bottom: var(--space-sm);
-    color: white;
+.block h2 {
+    color: var(--color-primary);
+    margin-bottom: 1.25rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    position: relative;
+    display: inline-block;
+}
+
+.block h2::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 0;
+    width: 40px;
+    height: 3px;
+    background: var(--color-primary-light);
+    transition: width 0.3s ease;
+}
+
+.block:hover h2::after {
+    width: 80px;
 }
 
 .block p {
-    font-size: var(--font-size-sm);
+    color: var(--color-text-light);
+    line-height: 1.7;
+    margin-top: 1rem;
+    transition: color 0.3s ease;
+}
+
+.block:hover p {
+    color: var(--color-text);
+}
+
+.block::after {
+    content: '';
+    position: absolute;
+    right: 1.5rem;
+    top: 1.5rem;
+    width: 50px;
+    height: 50px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    opacity: 0.1;
+    transition: all 0.4s ease;
+}
+
+.block-worship::after {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231D3A5F"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-1.5 0c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5h-3z"/></svg>');
+}
+
+.block-calendar::after {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231D3A5F"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>');
+}
+
+.block-ministries::after {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231D3A5F"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>');
+}
+
+.block-missions::after {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%231D3A5F"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>');
+}
+
+.block:hover::after {
+    transform: rotate(10deg) scale(1.2);
+    opacity: 0.2;
+}
+
+/* Styles pour le slider "Nous croyons" */
+.beliefs-slider {
+    position: relative;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    overflow: hidden;
+    padding: 2rem 0;
+}
+
+.beliefs-slide {
+    display: none;
+    padding: 2.5rem;
+    background: white;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    transition: all 0.4s ease;
+    text-align: center;
+}
+
+.beliefs-slide.active {
+    display: block;
+    animation: fadeIn 0.8s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.beliefs-slide h2 {
+    color: var(--color-primary);
+    font-size: 1.8em;
+    margin-bottom: 1.5rem;
+    position: relative;
+    display: inline-block;
+}
+
+.beliefs-slide h2::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 3px;
+    background: var(--color-primary);
+    border-radius: 3px;
+}
+
+.beliefs-slide p {
+    color: var(--color-text);
+    font-size: 1.1em;
+    line-height: 1.8;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.beliefs-nav {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+    gap: 1rem;
+}
+
+.beliefs-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e0e0e0;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.beliefs-dot.active {
+    background: var(--color-primary);
+    transform: scale(1.2);
+}
+
+.beliefs-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: white;
+    border: 2px solid var(--color-border);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.2em;
+    color: var(--color-primary);
+    transition: all 0.3s ease;
+    z-index: 10;
+}
+
+.beliefs-arrow:hover {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.beliefs-arrow.prev {
+    left: 20px;
+}
+
+.beliefs-arrow.next {
+    right: 20px;
+}
+
+@media (max-width: 768px) {
+    .beliefs-arrow {
+        width: 35px;
+        height: 35px;
+    }
+    
+    .beliefs-slide {
+        padding: 1.5rem;
+    }
+}
+
+/* 10.5 NOS VALEURS FONDAMENTALES */
+.values-section {
+    padding: 5rem 0;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.values-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,0,0,0.1), transparent);
+}
+
+.values-container {
+    position: relative;
+    z-index: 2;
+}
+
+.values-title {
+    text-align: center;
+    font-size: 2.2em;
+    margin-bottom: 3rem;
+    color: var(--color-primary);
+    position: relative;
+    display: inline-block;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.values-title::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 3px;
+    background: var(--color-primary);
+    border-radius: 3px;
+}
+
+.values-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.value-card {
+    background: white;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    z-index: 1;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.value-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 5px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
+    transition: all 0.4s ease;
+}
+
+.value-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.12);
+}
+
+.value-card:hover .value-icon {
+    transform: scale(1.1) rotate(5deg);
+    color: var(--color-primary);
+}
+
+.value-content {
+    padding: 2.5rem 2rem;
+    position: relative;
+    z-index: 2;
+    background: white;
+}
+
+.value-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5em;
+    color: var(--color-primary);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.value-card h3 {
+    text-align: center;
+    color: var(--color-primary-dark);
+    margin-bottom: 1.2rem;
+    font-size: 1.5em;
+    font-weight: 700;
+    position: relative;
+    padding-bottom: 0.8rem;
+}
+
+.value-card h3::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 3px;
+    background: var(--color-primary-light);
+    transition: all 0.3s ease;
+}
+
+.value-card:hover h3::after {
+    width: 60px;
+    background: var(--color-primary);
+}
+
+.value-card p {
+    color: var(--color-text-light);
+    text-align: center;
+    line-height: 1.7;
     margin: 0;
-    opacity: 0.95;
+    transition: color 0.3s ease;
+}
+
+.value-card:hover p {
+    color: var(--color-text);
+}
+
+/* Effet de fond décoratif */
+.values-bg-pattern {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.03;
+    z-index: 1;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
 /* 11. NEW SERMONS / ENSEIGNEMENTS & MEDITATIONS */

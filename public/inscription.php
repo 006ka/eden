@@ -12,10 +12,6 @@ $stmt = $pdo->prepare("SELECT id, titre, date_debut FROM retreats WHERE date_deb
 $stmt->execute([$today->format('Y-m-d')]);
 $upcomingRetreats = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Programmes à venir
-$stmt = $pdo->prepare("SELECT id, titre, date_debut FROM programmes WHERE date_debut IS NOT NULL AND date_debut >= ? ORDER BY date_debut ASC");
-$stmt->execute([$today->format('Y-m-d')]);
-$upcomingProgrammes = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Informations d'évènement passées en GET (ex: type=retraite&id=3&label=Retraite+Décembre)
 $eventType  = isset($_GET['type']) ? trim($_GET['type']) : '';
@@ -24,22 +20,8 @@ $eventLabel = isset($_GET['label']) ? trim($_GET['label']) : '';
 
 // Si pas de type/id spécifié, cherche l'activité la plus proche
 if ($eventType === '' || $eventId === null) {
-    $nextRetreat = !empty($upcomingRetreats) ? $upcomingRetreats[0] : null;
-    $nextProgramme = !empty($upcomingProgrammes) ? $upcomingProgrammes[0] : null;
-    
-    // Détermine quel événement est le plus proche
-    if ($nextRetreat && $nextProgramme) {
-        $eventType = (new DateTime($nextRetreat['date_debut'])) <= (new DateTime($nextProgramme['date_debut'])) ? 'retraite' : 'programme';
-        $nextEvent = (new DateTime($nextRetreat['date_debut'])) <= (new DateTime($nextProgramme['date_debut'])) ? $nextRetreat : $nextProgramme;
-    } elseif ($nextRetreat) {
-        $eventType = 'retraite';
-        $nextEvent = $nextRetreat;
-    } elseif ($nextProgramme) {
-        $eventType = 'programme';
-        $nextEvent = $nextProgramme;
-    } else {
-        $nextEvent = null;
-    }
+    $nextEvent = !empty($upcomingRetreats) ? $upcomingRetreats[0] : null;
+    $eventType = $nextEvent ? 'retraite' : '';
     
     if ($nextEvent) {
         $eventId = (int)$nextEvent['id'];
@@ -120,12 +102,6 @@ if ($successMessage !== '' && $eventType !== '' && $eventId !== null) {
                 $eventPrix = !empty($row['prix']) ? $row['prix'] : '';
                 $eventFicheUrl = !empty($row['fiche_url']) ? $row['fiche_url'] : '';
             }
-        } elseif ($eventType === 'programme') {
-            $stmt = $pdo->prepare('SELECT prix FROM programmes WHERE id = ?');
-            $stmt->execute([$eventId]);
-            if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $eventPrix = !empty($row['prix']) ? $row['prix'] : '';
-            }
         }
     } catch (PDOException $e) {
         // en cas d'erreur, on n'empêche pas l'affichage de la confirmation
@@ -188,20 +164,20 @@ if ($successMessage !== '' && $eventType !== '' && $eventId !== null) {
                 <h2 style="font-size: 1.6em; font-weight: 700; margin-bottom: 20px; color: var(--dark-text);">Pourquoi s'inscrire ?</h2>
                 <div class="block-grid">
                     <div class="block" style="background-color: #2c6e49;">
-                        <h3>🎯 Planning</h3>
-                        <p style="font-size: 0.95em;">Organisé à l'avance</p>
+                        <h3 style="color: white;">🎯 Planning</h3>
+                        <p style="font-size: 0.95em; color: white;">Organisé à l'avance</p>
                     </div>
                     <div class="block" style="background-color: #3d7f5a;">
-                        <h3>👥 Accueil</h3>
-                        <p style="font-size: 0.95em;">Chaleureux et attentif</p>
+                        <h3 style="color: white;">👥 Accueil</h3>
+                        <p style="font-size: 0.95em; color: white;">Chaleureux et attentif</p>
                     </div>
                     <div class="block" style="background-color: #4d8f6a;">
-                        <h3>📋 Suivi</h3>
-                        <p style="font-size: 0.95em;">Personnalisé</p>
+                        <h3 style="color: white;">📋 Suivi</h3>
+                        <p style="font-size: 0.95em; color: white;">Personnalisé</p>
                     </div>
                     <div class="block" style="background-color: #5d9f7a;">
-                        <h3>🤝 Communauté</h3>
-                        <p style="font-size: 0.95em;">Solidaire</p>
+                        <h3 style="color: white;">🤝 Communauté</h3>
+                        <p style="font-size: 0.95em; color: white;">Solidaire</p>
                     </div>
                 </div>
             </div>
@@ -226,36 +202,17 @@ if ($successMessage !== '' && $eventType !== '' && $eventId !== null) {
 
             <!-- SÉLECTEUR D'ACTIVITÉ -->
             <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 1.1em;">Choisir une activité</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div>
-                        <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Type d'activité</label>
-                        <select id="activity_type_select" onchange="updateActivityList()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer;">
-                            <option value="">-- Sélectionner --</option>
-                            <option value="retraite" <?php echo ($eventType === 'retraite' ? 'selected' : ''); ?>>Retraites</option>
-                            <option value="programme" <?php echo ($eventType === 'programme' ? 'selected' : ''); ?>>Programmes</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Activité</label>
-                        <select id="activity_select" onchange="updateActivityData()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer;">
-                            <option value="">-- Sélectionner --</option>
-                            <?php if ($eventType === 'retraite' || $eventType === ''): ?>
-                                <?php foreach ($upcomingRetreats as $r): ?>
-                                    <option value="retraite_<?php echo (int)$r['id']; ?>" <?php echo ($eventType === 'retraite' && $eventId === (int)$r['id'] ? 'selected' : ''); ?> data-type="retraite" data-id="<?php echo (int)$r['id']; ?>" data-label="<?php echo htmlspecialchars($r['titre']); ?>">
-                                        <?php echo htmlspecialchars($r['titre']); ?> - <?php echo date('d/m/Y', strtotime($r['date_debut'])); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                            <?php if ($eventType === 'programme'): ?>
-                                <?php foreach ($upcomingProgrammes as $p): ?>
-                                    <option value="programme_<?php echo (int)$p['id']; ?>" <?php echo ($eventType === 'programme' && $eventId === (int)$p['id'] ? 'selected' : ''); ?> data-type="programme" data-id="<?php echo (int)$p['id']; ?>" data-label="<?php echo htmlspecialchars($p['titre']); ?>">
-                                        <?php echo htmlspecialchars($p['titre']); ?> - <?php echo date('d/m/Y', strtotime($p['date_debut'])); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </select>
-                    </div>
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 1.1em;">Choisir une retraite</h3>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Retraite</label>
+                    <select id="activity_select" onchange="updateActivityData()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer;">
+                        <option value="">-- Sélectionner --</option>
+                        <?php foreach ($upcomingRetreats as $r): ?>
+                            <option value="retraite_<?php echo (int)$r['id']; ?>" <?php echo ($eventType === 'retraite' && $eventId === (int)$r['id'] ? 'selected' : ''); ?> data-type="retraite" data-id="<?php echo (int)$r['id']; ?>" data-label="<?php echo htmlspecialchars($r['titre']); ?>">
+                                <?php echo htmlspecialchars($r['titre']); ?> - <?php echo date('d/m/Y', strtotime($r['date_debut'])); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
             </div>
 
@@ -351,8 +308,11 @@ if ($successMessage !== '' && $eventType !== '' && $eventId !== null) {
     <script>
         // Données des activités
         const activities = {
-            retraite: <?php echo json_encode($upcomingRetreats); ?>,
-            programme: <?php echo json_encode($upcomingProgrammes); ?>
+            retraite: [
+                <?php foreach ($upcomingRetreats as $retreat): ?>
+                { id: <?= (int)$retreat['id'] ?>, text: '<?= addslashes($retreat['titre']) ?>' },
+                <?php endforeach; ?>
+            ]
         };
 
         function updateActivityList() {
@@ -369,9 +329,8 @@ if ($successMessage !== '' && $eventType !== '' && $eventId !== null) {
                     option.value = selectedType + '_' + activity.id;
                     option.dataset.type = selectedType;
                     option.dataset.id = activity.id;
-                    option.dataset.label = activity.titre;
-                    const date = new Date(activity.date_debut).toLocaleDateString('fr-FR');
-                    option.textContent = activity.titre + ' - ' + date;
+                    option.dataset.label = activity.text;
+                    option.textContent = activity.text;
                     activitySelect.appendChild(option);
                 });
             }
@@ -393,7 +352,7 @@ if ($successMessage !== '' && $eventType !== '' && $eventId !== null) {
             document.querySelector('input[name="event_id"]').value = eventId;
             document.querySelector('input[name="event_label"]').value = eventLabel;
 
-            // Afficher/masquer les sections selon le type
+            // Affiche la section appropriée selon le type d'activité
             const retreatSection = document.getElementById('retreat_section');
             if (eventType === 'retraite') {
                 retreatSection.style.display = 'block';
@@ -412,10 +371,7 @@ if ($successMessage !== '' && $eventType !== '' && $eventId !== null) {
 
         // Initialisation
         document.addEventListener('DOMContentLoaded', function() {
-            const typeSelect = document.getElementById('activity_type_select');
-            if (typeSelect.value) {
-                updateActivityList();
-            }
+            updateActivityList();
         });
     </script>
 

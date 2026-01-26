@@ -2,15 +2,32 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-// Redirige immédiatement vers la nouvelle interface admin
-header('Location: admin.php');
-exit;
+// Si l'utilisateur est déjà connecté, le rediriger vers le tableau de bord
+if (isset($_SESSION['admin_username'])) {
+    header('Location: admin.php');
+    exit();
+}
 
 // Gestion de la déconnexion
 if (isset($_GET['logout'])) {
+    // Détruire toutes les données de session
+    $_SESSION = array();
+    
+    // Détruire le cookie de session
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
+    
+    // Détruire la session
     session_destroy();
-    header('Location: admin.php');
-    exit;
+    
+    // Rediriger vers la page de connexion
+    header('Location: index.php');
+    exit();
 }
 
 // Vérification du formulaire de connexion
@@ -26,10 +43,28 @@ if (isset($_POST['username'], $_POST['password'])) {
             $stmt->execute([$username]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            // Ici le mot de passe est stocké en clair dans la base (edenadmin)
+            // Vérification du mot de passe (en clair pour le moment, à remplacer par password_verify en production)
             if ($user && $user['password'] === $password) {
+                // Initialisation de la session
                 $_SESSION['is_admin'] = true;
                 $_SESSION['admin_username'] = $user['username'];
+                
+                // Mettre à jour la dernière connexion si la colonne existe
+                try {
+                    // Vérifier si la colonne last_login existe
+                    $checkColumn = $pdo->query("SHOW COLUMNS FROM admin_users LIKE 'last_login'");
+                    if ($checkColumn->rowCount() > 0) {
+                        $updateStmt = $pdo->prepare("UPDATE admin_users SET last_login = NOW() WHERE username = ?");
+                        $updateStmt->execute([$user['username']]);
+                    }
+                } catch (PDOException $e) {
+                    // En cas d'erreur, on continue quand même
+                    error_log('Erreur lors de la mise à jour de la dernière connexion : ' . $e->getMessage());
+                }
+                
+                // Rediriger vers le tableau de bord
+                header('Location: admin.php');
+                exit();
             } else {
                 $login_error = 'Identifiants incorrects';
             }

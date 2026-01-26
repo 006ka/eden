@@ -5,7 +5,6 @@
 
 // Récupérer les retreats et programmes pour le filtre
 $retreatsForFilter = $pdo->query('SELECT id, titre, date_debut FROM retreats ORDER BY COALESCE(date_debut, date_fin) DESC')->fetchAll(PDO::FETCH_ASSOC);
-$programmesForFilter = $pdo->query('SELECT id, titre, date_debut FROM programmes ORDER BY COALESCE(date_debut, date_fin) DESC')->fetchAll(PDO::FETCH_ASSOC);
 
 // Filtre: récupérer les inscrits pour une activité sélectionnée
 $selectedEventType = isset($_GET['filter_event_type']) ? trim($_GET['filter_event_type']) : '';
@@ -22,11 +21,6 @@ if ($selectedEventType !== '' && $selectedEventId !== null) {
     // Récupère le label de l'activité
     if ($selectedEventType === 'retraite') {
         $stmt = $pdo->prepare('SELECT titre FROM retreats WHERE id = ?');
-        $stmt->execute([$selectedEventId]);
-        $activity = $stmt->fetch(PDO::FETCH_ASSOC);
-        $selectedActivityLabel = $activity ? $activity['titre'] : '';
-    } else if ($selectedEventType === 'programme') {
-        $stmt = $pdo->prepare('SELECT titre FROM programmes WHERE id = ?');
         $stmt->execute([$selectedEventId]);
         $activity = $stmt->fetch(PDO::FETCH_ASSOC);
         $selectedActivityLabel = $activity ? $activity['titre'] : '';
@@ -95,14 +89,7 @@ function sanitizeFilename($str) {
         <form method="get" style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
             <input type="hidden" name="section" value="inscriptions_gestion">
             
-            <div style="flex: 1; min-width: 200px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 6px;">Type d'activité</label>
-                <select name="filter_event_type" onchange="updateEventSelect()" id="event_type_select" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
-                    <option value="">-- Sélectionner --</option>
-                    <option value="retraite" <?php echo ($selectedEventType === 'retraite' ? 'selected' : ''); ?>>Retraites</option>
-                    <option value="programme" <?php echo ($selectedEventType === 'programme' ? 'selected' : ''); ?>>Programmes</option>
-                </select>
-            </div>
+            <input type="hidden" name="filter_event_type" value="retraite">
 
             <div style="flex: 1; min-width: 200px;">
                 <label style="display: block; font-weight: 600; margin-bottom: 6px;">Activité</label>
@@ -113,13 +100,6 @@ function sanitizeFilename($str) {
                             <option value="<?php echo (int)$r['id']; ?>" <?php echo ($selectedEventId === (int)$r['id'] ? 'selected' : ''); ?>>
                                 <?php echo htmlspecialchars($r['titre']); ?> 
                                 <?php if ($r['date_debut']): ?>(<?php echo date('d/m/Y', strtotime($r['date_debut'])); ?>)<?php endif; ?>
-                            </option>
-                        <?php endforeach; ?>
-                    <?php elseif ($selectedEventType === 'programme'): ?>
-                        <?php foreach ($programmesForFilter as $p): ?>
-                            <option value="<?php echo (int)$p['id']; ?>" <?php echo ($selectedEventId === (int)$p['id'] ? 'selected' : ''); ?>>
-                                <?php echo htmlspecialchars($p['titre']); ?> 
-                                <?php if ($p['date_debut']): ?>(<?php echo date('d/m/Y', strtotime($p['date_debut'])); ?>)<?php endif; ?>
                             </option>
                         <?php endforeach; ?>
                     <?php endif; ?>

@@ -6,19 +6,24 @@ EDEN est un site web PHP/MySQL qui présente le ministère EDEN, ses retraites s
 
 - **Côté public**
   - De consulter les retraites à venir et passées.
-  - De s’inscrire à une retraite via un formulaire dédié.
+  - De s'inscrire à une retraite via un formulaire dédié.
   - De voir les programmes/activités annuelles.
   - De parcourir une **galerie de photos** avec ouverture en grand (modale/lightbox).
   - De lire la page **À propos** (vision, mission, valeurs, équipe).
   - De contacter le ministère via un formulaire de contact.
+  - De déposer des **témoignages** avec photo.
+  - De devenir **partenaire** du ministère.
+  - De consulter les **enseignements** et méditations.
 
 - **Côté administration**
-  - De gérer les **retraites** (CRUD, upload d’images, fiche pratique, pagination).
+  - De gérer les **retraites** (CRUD, upload d'images, fiche pratique, pagination).
   - De gérer les **programmes** annuels.
   - De gérer la **galerie** (upload de photos, association à une retraite, miniatures).
   - De consulter et exporter les **inscriptions** (CSV + impression/"PDF" navigateur).
-  - De consulter les **contacts** reçus.
+  - De consulter les **contacts** reçus (avec numéros de téléphone).
   - De gérer les **témoignages** et les horaires.
+  - De gérer les **enseignements** (ajout, modification, suppression).
+  - De visualiser les **demandes de partenariat** reçues.
 
 Le projet est pensé pour tourner sur un environnement type **WAMP/XAMPP** (Windows, Apache, MySQL, PHP).
 
@@ -87,27 +92,32 @@ eden/
 ├─ admin/
 │  ├─ admin.php           # Entrée principale de l’espace admin
 │  ├─ index.php           # Redirection/accueil admin
+│  ├─ enseignements.php   # Gestion des enseignements et méditations
 │  └─ partials/           # Sections de l’admin (retreats, programmes, galerie, inscriptions, etc.)
 ├─ public/
+│  ├─ index.php           # Page d'accueil
 │  ├─ retraite.php        # Page retraites (liste + détails)
 │  ├─ programmes.php      # Page programmes / activités
-│  ├─ inscription.php     # Formulaires d’inscription aux retraites
+│  ├─ inscription.php     # Formulaires d'inscription aux retraites
 │  ├─ galerie.php         # Galerie publique avec lightbox/modale
 │  ├─ contact.php         # Page de contact (+ formulaire)
 │  ├─ apropos.php         # Page À propos (vision, mission, valeurs, équipe)
+│  ├─ temoignages.php     # Page des témoignages
+│  ├─ partenaire.php      # Page de partenariat
 │  └─ ... autres pages publiques
 ├─ assets/
 │  ├─ css/
-│  │  └─ main.css         # Feuille de style principale (layout, boutons, grilles, etc.)
+│  │  ├─ main.css         # Feuille de style principale
+│  │  └─ admin.css        # Styles spécifiques à l'administration
 │  └─ js/
-│     └─ lightbox.js      # Script de lightbox (ancienne version, peu utilisée)
+│     └─ lightbox.js      # Script de lightbox
 ├─ uploads/               # Fichiers uploadés (images, PDF, miniatures)
 ├─ includes/
 │  ├─ header.php          # En-tête du site (menu, logo)
 │  └─ footer.php          # Pied de page
 ├─ config/
 │  └─ db.php              # Connexion PDO à la base MySQL
-├─ index.php              # Page d’accueil publique
+├─ logs/                  # Fichiers de logs d'erreurs
 └─ README.md              # Ce fichier
 ```
 
@@ -165,6 +175,18 @@ eden/
 
 - Formulaire d’inscription à une retraite.
 - Enregistre les données dans `inscriptions` (nom, email, âge, présence, besoins particuliers, etc.).
+
+### 5.8. Témoignages (`public/temoignages.php`)
+
+- Affichage des témoignages approuvés par l'administration.
+- Formulaire de soumission de témoignage avec upload de photo.
+- Grille responsive avec avatars et messages.
+
+### 5.9. Partenariat (`public/partenaire.php`)
+
+- Présentation des types de partenariat disponibles.
+- Formulaire de demande de partenariat avec validation.
+- Enregistrement dans la table `contacts` avec type 'partnership'.
 
 ---
 
@@ -255,7 +277,68 @@ Les paramètres d’URL sont de type `?section=retreats&retreat_page=2`, etc.
 
 ---
 
-## 12. Support
+## 12. Dépannage et problèmes courants
+
+### 12.1. Erreurs de connexion à la base de données
+
+**Problème** : `SQLSTATE[HY000] [1045] Access denied for user`
+
+**Solution** :
+- Vérifiez les identifiants dans `config/db.php`
+- Assurez-vous que MySQL est démarré
+- Vérifiez que l'utilisateur a les permissions sur la base de données
+
+### 12.2. Erreurs d'upload de fichiers
+
+**Problème** : `Failed to open stream: Permission denied`
+
+**Solution** :
+- Vérifiez les permissions du dossier `uploads/`
+- Exécutez : `chmod 755 uploads/` (Linux/Mac)
+- Sur Windows, assurez-vous que IIS/Apache a les droits d'écriture
+
+### 12.3. Erreurs d'affichage
+
+**Problème** : Styles CSS non appliqués
+
+**Solution** :
+- Vérifiez les chemins dans `assets/css/main.css`
+- Assurez-vous que le serveur web sert les fichiers statiques
+- Videz le cache du navigateur
+
+### 12.4. Erreurs dans les formulaires
+
+**Problème** : Les données ne s'enregistrent pas
+
+**Solution** :
+- Consultez les fichiers de logs dans `logs/`
+- Vérifiez la structure de la table avec `setup_contacts_table.php`
+- Assurez-vous que toutes les colonnes requises existent
+
+### 12.5. Email non envoyé
+
+**Problème** : `Warning: mail(): Failed to connect to mailserver`
+
+**Solution** :
+- Configurez un serveur SMTP dans `php.ini`
+- Ou utilisez une librairie comme PHPMailer
+- Pour le développement, vous pouvez commenter la fonction `mail()`
+
+---
+
+## 13. Scripts utilitaires
+
+Le projet inclut plusieurs scripts pour faciliter le diagnostic :
+
+- `setup_contacts_table.php` : Vérifie et configure la table `contacts`
+- `check_db.php` : Diagnostic de la connexion à la base de données
+- `debug_contact.php` : Débogage du formulaire de contact
+
+Accédez à ces scripts via votre navigateur pour diagnostiquer les problèmes.
+
+---
+
+## 14. Support
 
 Pour toute question ou bug :
 

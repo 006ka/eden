@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     nom VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
     telephone VARCHAR(50) NOT NULL,
+    sujet VARCHAR(255) DEFAULT NULL,
     message TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'contact',
     created_at DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -110,3 +112,26 @@ CREATE TABLE IF NOT EXISTS admin_users (
 INSERT INTO admin_users (username, password, created_at)
 VALUES ('admin', 'edenadmin', NOW())
 ON DUPLICATE KEY UPDATE username = VALUES(username);
+
+-- Table des témoignages
+CREATE TABLE IF NOT EXISTS testimonials (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    author VARCHAR(255) NOT NULL,
+    location VARCHAR(255) DEFAULT NULL,
+    content TEXT NOT NULL,
+    rating INT NOT NULL DEFAULT 5,
+    image_url VARCHAR(500) DEFAULT NULL,
+    is_approved BOOLEAN DEFAULT FALSE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Table des feedback et suggestions
+CREATE TABLE IF NOT EXISTS feedbacks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nom VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    sujet VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    created_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
